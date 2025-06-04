@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Import your entry points
 from descidb.query.evaluation_agent import EvaluationAgent
 from descidb.utils.gdrive_scraper import scrape_gdrive_pdfs
+from descidb.core.processor_main import process_combination
 
 # Setup FastAPI app
 app = FastAPI(
@@ -100,33 +101,39 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         valid_chunkers = ["paragraph", "sentence", "word", "fixed_length"]
         valid_embedders = ["openai", "nvidia", "bge"]
         
-        # Check if all provided converters are valid
-        invalid_converters = [c for c in request.converters if c not in valid_converters]
-        if invalid_converters:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid converters: {invalid_converters}. Valid options: {valid_converters}"
-            )
+        # Validate requested components
+        for converter in request.converters:
+            if converter not in valid_converters:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid converter '{converter}'. Valid options: {valid_converters}"
+                )
         
-        # Check if all provided chunkers are valid
-        invalid_chunkers = [c for c in request.chunkers if c not in valid_chunkers]
-        if invalid_chunkers:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid chunkers: {invalid_chunkers}. Valid options: {valid_chunkers}"
-            )
+        for chunker in request.chunkers:
+            if chunker not in valid_chunkers:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid chunker '{chunker}'. Valid options: {valid_chunkers}"
+                )
         
-        # Check if all provided embedders are valid
-        invalid_embedders = [e for e in request.embedders if e not in valid_embedders]
-        if invalid_embedders:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid embedders: {invalid_embedders}. Valid options: {valid_embedders}"
-            )
+        for embedder in request.embedders:
+            if embedder not in valid_embedders:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid embedder '{embedder}'. Valid options: {valid_embedders}"
+                )
         
-        # Create Cartesian product of all combinations
-        combinations = list(itertools.product(request.converters, request.chunkers, request.embedders))
-        processing_combinations = [f"{conv}_{chunk}_{embed}" for conv, chunk, embed in combinations]
+        # Generate Cartesian product of all combinations
+        processing_combinations = list(itertools.product(
+            request.converters,
+            request.chunkers,
+            request.embedders
+        ))
+        
+        combination_strings = [
+            f"{converter}_{chunker}_{embedder}"
+            for converter, chunker, embedder in processing_combinations
+        ]
         
         # Download PDFs from Google Drive to papers folder
         downloaded_files = scrape_gdrive_pdfs(drive_url=request.drive_url)
@@ -137,15 +144,45 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
                 message="No PDF files found or downloaded from the Google Drive folder",
                 downloaded_files=[],
                 total_files=0,
-                processing_combinations=processing_combinations
+                processing_combinations=combination_strings
             )
+        
+        # Process each combination
+        for converter, chunker, embedder in processing_combinations:
+            try:
+                # Call the processor for this specific combination
+                await process_combination(
+                    converter=converter,
+                    chunker=chunker,
+                    embedder=embedder,
+                    papers_list=downloaded_files
+                )
+            except Exception as e:
+                # Log the error but continue with other combinations
+                print(f"Error processing combination {converter}_{chunker}_{embedder}: {str(e)}")
+        
+        # Clean up: Delete all PDF files after processing
+        papers_dir = "papers"
+        deleted_files = []
+        if os.path.exists(papers_dir):
+            for filename in downloaded_files:
+                file_path = os.path.join(papers_dir, filename)
+                try:
+                    if os.path.exists(file_path) and filename.lower().endswith('.pdf'):
+                        os.remove(file_path)
+                        deleted_files.append(filename)
+                        print(f"Deleted: {filename}")
+                except Exception as e:
+                    print(f"Error deleting {filename}: {str(e)}")
+        
+        print(f"Cleanup complete: Deleted {len(deleted_files)} PDF files from papers/ directory")
         
         return IngestGDriveResponse(
             success=True,
-            message=f"Successfully downloaded {len(downloaded_files)} PDF files to papers/ directory. Created {len(processing_combinations)} processing combinations.",
+            message=f"Successfully processed {len(downloaded_files)} PDF files with {len(processing_combinations)} combinations and cleaned up papers/ directory.",
             downloaded_files=downloaded_files,
             total_files=len(downloaded_files),
-            processing_combinations=processing_combinations
+            processing_combinations=combination_strings
         )
         
     except ValueError as e:
