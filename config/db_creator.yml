@@ -6,6 +6,10 @@ neo4j:
   username: ${NEO4J_USERNAME}
   password: ${NEO4J_PASSWORD}
 
+# User configuration
+user:
+  email: "vardhanshorewala@berkeley.edu"
+
 # Database components
 components:
   converter:
@@ -18,7 +22,7 @@ components:
 # Vector database configuration
 vector_db:
   path: descidb/database
-# CIDs file paths to check
+# CIDs file paths to check (will be combined with user-specific paths)
 cids_file_paths:
   - cids.txt
   - temp/cids.txt

@@ -31,7 +31,7 @@ class TestProcessorIntegration:
     def mock_config(self):
         """Mock configuration."""
         return {
-            "author": {"public_key": "mock_author_key"},
+            "author": {"public_key": "mock_author_key", "email": "test@example.com"},
             "databases": [
                 {
                     "converter": "mock_converter",

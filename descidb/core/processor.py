@@ -38,6 +38,7 @@ class Processor:
         metadata_file: str,
         ipfs_api_key: str,
         TokenRewarder: TokenRewarder,
+        user_email: str,
         project_root: Optional[Path] = None,
     ):
         """
@@ -50,6 +51,7 @@ class Processor:
             metadata_file: Path to metadata file
             ipfs_api_key: API key for Lighthouse IPFS
             TokenRewarder: Token rewarder instance
+            user_email: Email of the user for creating user-specific folders
             project_root: Path to project root directory
         """
         self.logger = get_logger(__name__ + ".Processor")
@@ -62,15 +64,22 @@ class Processor:
         self.convert_cache: Dict[str, str] = {}  # Cache for converted text
         self.chunk_cache: Dict[str, List[str]] = {}  # Cache for chunked text
         self.project_root = project_root or Path(__file__).parent.parent.parent
+        self.user_email = user_email
 
         # Create temp directory for temporary files
         self.temp_dir = self.project_root / "temp"
         os.makedirs(self.temp_dir, exist_ok=True)
-        self.logger.info(f"Using temp directory: {self.temp_dir}")
+        
+        # Create user-specific folder inside temp directory
+        # Sanitize email for use as folder name (replace @ and . with _)
+        self.user_temp_dir = self.temp_dir / self.user_email
+        os.makedirs(self.user_temp_dir, exist_ok=True)
+        
+        self.logger.info(f"Using user temp directory: {self.user_temp_dir}")
 
-        # Paths for temporary files
-        self.tmp_file_path = self.temp_dir / "tmp.txt"
-        self.cids_file_path = self.temp_dir / "cids.txt"
+        # Paths for user-specific temporary files
+        self.tmp_file_path = self.user_temp_dir / "tmp.txt"
+        self.cids_file_path = self.user_temp_dir / "cids.txt"
 
         # Set SSL certificate path explicitly
         os.environ["SSL_CERT_FILE"] = certifi.where()

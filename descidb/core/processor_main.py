@@ -127,6 +127,7 @@ def test_processor():
         metadata_file=str(metadata_file),
         ipfs_api_key=lighthouse_api_key,
         TokenRewarder=tokenRewarder,
+        user_email=author_config["email"],
         project_root=PROJECT_ROOT,
     )
 
@@ -170,7 +171,7 @@ def test_processor():
     logger.info(f"Cleanup complete: Deleted {len(deleted_files)} PDF files from papers/ directory")
 
 
-async def process_combination(converter: str, chunker: str, embedder: str, papers_list: List[str], db_path: str):
+async def process_combination(converter: str, chunker: str, embedder: str, papers_list: List[str], db_path: str, user_email: str):
     """
     Process papers for a specific combination of converter, chunker, and embedder.
     
@@ -246,6 +247,7 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
         metadata_file=str(metadata_file),
         ipfs_api_key=lighthouse_api_key,
         TokenRewarder=tokenRewarder,
+        user_email=user_email,
         project_root=PROJECT_ROOT,
     )
 

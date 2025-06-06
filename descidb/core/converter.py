@@ -28,9 +28,9 @@ logger = get_logger(__name__)
 load_dotenv(override=True)
 
 
-def convert_from_url(conversion_type: ConverterType, input_url: str) -> str:
+def convert_from_url(conversion_type: ConverterType, input_url: str, user_temp_dir: str = "./tmp") -> str:
     """Convert based on the specified conversion type."""
-    download_path = download_from_url(url=input_url)
+    download_path = download_from_url(url=input_url, output_folder=user_temp_dir)
 
     if download_path.endswith(".tar"):
         output_path = download_path[: download_path.rfind("/")]

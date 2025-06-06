@@ -7,6 +7,7 @@ with scientific document data for the DeSciDB system.
 
 import os
 from pathlib import Path
+from typing import List
 
 import yaml
 from dotenv import load_dotenv
@@ -43,9 +44,12 @@ def load_config():
         raise
 
 
-def main():
+def create_user_database(user_email: str):
     """
-    Main function to create and populate the database from IPFS CIDs.
+    Create and populate the database from IPFS CIDs for a specific user.
+    
+    Args:
+        user_email: Email of the user for creating user-specific database
     """
     # Load configuration
     config = load_config()
@@ -60,6 +64,8 @@ def main():
         neo4j_config["password"].replace("${", "").replace("}", "")
     )
 
+    logger.info(f"Creating databases for user: {user_email}")
+
     # Initialize Neo4j graph
     graph = IPFSNeo4jGraph(
         uri=neo4j_uri, username=neo4j_username, password=neo4j_password
@@ -68,12 +74,14 @@ def main():
     # Extract database components
     components = config["components"]
 
-    # Set up vector database
-    db_path = PROJECT_ROOT / config["vector_db"]["path"]
-    os.makedirs(db_path, exist_ok=True)
+    # Set up user-specific vector database path
+    base_db_path = PROJECT_ROOT / config["vector_db"]["path"]
+    user_db_path = base_db_path / user_email
+    os.makedirs(user_db_path, exist_ok=True)
+    logger.info(f"Using database path: {user_db_path}")
 
     # Initialize database manager
-    vector_db_manager = VectorDatabaseManager(components, db_path=str(db_path))
+    vector_db_manager = VectorDatabaseManager(components, db_path=str(user_db_path))
     create_db = DatabaseCreator(graph, vector_db_manager)
 
     # Construct relationship paths from components
@@ -95,17 +103,22 @@ def main():
     embedder = components["embedder"][0]
     db_name = f"{converter}_{chunker}_{embedder}"
 
-    # Look for CIDs file
-    cids_file_paths = [PROJECT_ROOT / path for path in config["cids_file_paths"]]
+    # Look for user-specific CIDs file paths
+    temp_dir = PROJECT_ROOT / "temp" / user_email
+    cids_file_paths = [
+        temp_dir / "cids.txt",  # User-specific temp directory
+    ]
 
     cids_file = None
     for path in cids_file_paths:
         if path.exists():
             cids_file = path
+            logger.info(f"Found CIDs file: {cids_file}")
             break
 
     if cids_file is None:
-        logger.error("No cids.txt file found. Please run processor first.")
+        logger.error(f"No cids.txt file found for user {user_email}. Please run processor first.")
+        logger.error(f"Checked paths: {[str(p) for p in cids_file_paths]}")
         return
 
     # Process CIDs
@@ -117,6 +130,21 @@ def main():
                 logger.info(f"Processing CID #{counter}: {start_cid}")
                 create_db.process_paths(start_cid, relationship_path, db_name)
                 counter += 1
+
+
+def main():
+    """
+    Main function to create and populate the database from IPFS CIDs.
+    Uses the user email from config file.
+    """
+    # Load configuration
+    config = load_config()
+    
+    # Get user email from config
+    user_email = config["user"]["email"]
+    
+    # Call the user-specific database creation function
+    create_user_database(user_email)
 
 
 if __name__ == "__main__":

@@ -27,3 +27,4 @@ databases:
 # Author configuration
 author:
   public_key: "0x55DE19820d5Dfc5761370Beb16Eb041E11272619"
+  email: "user@example.com"

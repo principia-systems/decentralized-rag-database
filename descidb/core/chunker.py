@@ -17,10 +17,10 @@ logger = get_logger(__name__)
 
 
 def chunk_from_url(
-    chunker_type: ChunkerType, input_url: str
+    chunker_type: ChunkerType, input_url: str, user_temp_dir: str = "./tmp"
 ) -> List[str]:
     """Chunk based on the specified chunking type."""
-    download_path = download_from_url(url=input_url)
+    download_path = download_from_url(url=input_url, output_folder=user_temp_dir)
 
     with open(download_path, "r") as file:
         input_text = file.read()

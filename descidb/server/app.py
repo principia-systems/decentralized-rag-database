@@ -1,11 +1,12 @@
 # Create new file: descidb/server/app.py
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict
 import json
 import os
 import sys
 import itertools
+import asyncio
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -33,6 +34,9 @@ app.add_middleware(
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 # Parent directory of the project (coophive folder)
 COOPHIVE_DIR = PROJECT_ROOT.parent
+
+# User-specific processing queues
+user_processing_locks: Dict[str, asyncio.Lock] = {}
 
 # Define request/response models
 class EvaluationRequest(BaseModel):
@@ -179,7 +183,8 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
                     chunker=chunker,
                     embedder=embedder,
                     papers_list=downloaded_files,
-                    db_path=user_papers_dir
+                    db_path=user_papers_dir,
+                    user_email=request.user_email
                 )
             except Exception as e:
                 # Log the error but continue with other combinations
