@@ -170,7 +170,7 @@ def test_processor():
     logger.info(f"Cleanup complete: Deleted {len(deleted_files)} PDF files from papers/ directory")
 
 
-async def process_combination(converter: str, chunker: str, embedder: str, papers_list: List[str]):
+async def process_combination(converter: str, chunker: str, embedder: str, papers_list: List[str], db_path: str):
     """
     Process papers for a specific combination of converter, chunker, and embedder.
     
@@ -192,7 +192,7 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
     api_keys = config["api_keys"]
 
     # Setup paths
-    papers_directory = PROJECT_ROOT / processing_config["papers_directory"]
+    papers_directory = Path(db_path)
     metadata_file = PROJECT_ROOT / processing_config["metadata_file"]
     storage_directory = COOPHIVE_DIR / processing_config["storage_directory"]
 

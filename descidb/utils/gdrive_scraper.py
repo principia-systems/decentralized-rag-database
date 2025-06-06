@@ -164,7 +164,7 @@ def download_pdf_file(file_id: str, file_name: str, output_dir: str) -> str:
     raise Exception(f"Failed to download {safe_filename} using all available methods")
 
 
-def scrape_gdrive_pdfs(drive_url: str) -> List[str]:
+def scrape_gdrive_pdfs(drive_url: str, download_dir: str) -> List[str]:
     """
     Scrape PDFs from a public Google Drive folder.
     
@@ -175,7 +175,7 @@ def scrape_gdrive_pdfs(drive_url: str) -> List[str]:
         List of paths to downloaded PDF files
     """
     # Always use the papers folder in the root directory
-    output_dir = os.path.join(os.path.dirname(__file__), "..", "..", "papers")
+    output_dir = download_dir
     
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)

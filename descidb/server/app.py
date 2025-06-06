@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import itertools
+from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import your entry points
@@ -29,12 +30,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+# Parent directory of the project (coophive folder)
+COOPHIVE_DIR = PROJECT_ROOT.parent
+
 # Define request/response models
 class EvaluationRequest(BaseModel):
     query: str
     collections: List[str]
     db_path: Optional[str] = None
     model_name: str = "openai/gpt-3.5-turbo"
+    user_email: str
 
 class IngestGDriveRequest(BaseModel):
     drive_url: str = Field(..., description="Public Google Drive folder URL")
@@ -50,6 +56,7 @@ class IngestGDriveRequest(BaseModel):
         default=["bge"], 
         description="List of embedders to use (openai, nvidia, bge)"
     )
+    user_email: str
 
 class IngestGDriveResponse(BaseModel):
     success: bool
@@ -62,6 +69,11 @@ class IngestGDriveResponse(BaseModel):
 async def evaluate_endpoint(request: EvaluationRequest):
     """Endpoint for evaluation (maps to run_evaluation.sh)"""
     try:
+        print(f"Evaluating query: {request.query}")
+        print(f"Collections: {request.collections}")
+        print(f"DB Path: {request.db_path}")
+        print(f"Model Name: {request.model_name}")
+        print(f"User Email: {request.user_email}")
         # Initialize evaluation agent
         agent = EvaluationAgent(model_name=request.model_name)
         # Run query on collections
@@ -85,7 +97,7 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
     Ingest PDFs from a public Google Drive folder.
     
     This endpoint scrapes all PDFs from a public Google Drive folder
-    and downloads them to the papers directory in the root.
+    and downloads them to a user-specific papers directory.
     It also creates a Cartesian product of all converter, chunker, and embedder combinations.
     """
     try:
@@ -123,6 +135,14 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
                     detail=f"Invalid embedder '{embedder}'. Valid options: {valid_embedders}"
                 )
         
+        papers_directory = PROJECT_ROOT / "papers"
+
+        # Create user-specific directory structure
+        user_papers_dir = os.path.join(str(papers_directory), request.user_email)
+        
+        # Create directories if they don't exist
+        os.makedirs(user_papers_dir, exist_ok=True)
+        
         # Generate Cartesian product of all combinations
         processing_combinations = list(itertools.product(
             request.converters,
@@ -135,8 +155,11 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
             for converter, chunker, embedder in processing_combinations
         ]
         
-        # Download PDFs from Google Drive to papers folder
-        downloaded_files = scrape_gdrive_pdfs(drive_url=request.drive_url)
+        # Download PDFs from Google Drive to user-specific papers folder
+        downloaded_files = scrape_gdrive_pdfs(
+            drive_url=request.drive_url,
+            download_dir=user_papers_dir
+        )
         
         if not downloaded_files:
             return IngestGDriveResponse(
@@ -150,32 +173,33 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         # Process each combination
         for converter, chunker, embedder in processing_combinations:
             try:
-                # Call the processor for this specific combination
+                # Call the processor for this specific combination with user-specific db path
                 await process_combination(
                     converter=converter,
                     chunker=chunker,
                     embedder=embedder,
-                    papers_list=downloaded_files
+                    papers_list=downloaded_files,
+                    db_path=user_papers_dir
                 )
             except Exception as e:
                 # Log the error but continue with other combinations
                 print(f"Error processing combination {converter}_{chunker}_{embedder}: {str(e)}")
         
         # Clean up: Delete all PDF files after processing
-        papers_dir = "papers"
-        deleted_files = []
-        if os.path.exists(papers_dir):
-            for filename in downloaded_files:
-                file_path = os.path.join(papers_dir, filename)
-                try:
-                    if os.path.exists(file_path) and filename.lower().endswith('.pdf'):
-                        os.remove(file_path)
-                        deleted_files.append(filename)
-                        print(f"Deleted: {filename}")
-                except Exception as e:
-                    print(f"Error deleting {filename}: {str(e)}")
+        # papers_dir = "papers"
+        # deleted_files = []
+        # if os.path.exists(papers_dir):
+        #     for filename in downloaded_files:
+        #         file_path = os.path.join(papers_dir, filename)
+        #         try:
+        #             if os.path.exists(file_path) and filename.lower().endswith('.pdf'):
+        #                 os.remove(file_path)
+        #                 deleted_files.append(filename)
+        #                 print(f"Deleted: {filename}")
+        #         except Exception as e:
+        #             print(f"Error deleting {filename}: {str(e)}")
         
-        print(f"Cleanup complete: Deleted {len(deleted_files)} PDF files from papers/ directory")
+        # print(f"Cleanup complete: Deleted {len(deleted_files)} PDF files from papers/ directory")
         
         return IngestGDriveResponse(
             success=True,
@@ -189,27 +213,6 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error ingesting PDFs: {str(e)}")
-
-@app.get("/api/papers")
-async def list_papers():
-    """List all PDF files in the papers directory."""
-    try:
-        papers_dir = "papers"
-        if not os.path.exists(papers_dir):
-            return {"papers": [], "total": 0}
-        
-        pdf_files = [
-            f for f in os.listdir(papers_dir) 
-            if f.lower().endswith('.pdf')
-        ]
-        
-        return {
-            "papers": pdf_files,
-            "total": len(pdf_files)
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing papers: {str(e)}")
 
 if __name__ == '__main__':
     import uvicorn
