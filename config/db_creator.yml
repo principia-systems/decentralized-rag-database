@@ -10,19 +10,6 @@ neo4j:
 user:
   email: "vardhanshorewala@berkeley.edu"
 
-# Database components
-components:
-  converter:
-    - openai
-  chunker:
-    - paragraph
-  embedder:
-    - openai
-
 # Vector database configuration
 vector_db:
   path: descidb/database
-# CIDs file paths to check (will be combined with user-specific paths)
-cids_file_paths:
-  - cids.txt
-  - temp/cids.txt

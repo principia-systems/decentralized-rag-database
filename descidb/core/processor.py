@@ -17,10 +17,7 @@ import requests
 from descidb.core.chunker import chunk
 from descidb.core.converter import convert
 from descidb.core.embedder import embed
-from descidb.db.chroma_client import VectorDatabaseManager
 from descidb.db.graph_db import IPFSNeo4jGraph
-from descidb.db.postgres_db import PostgresDBManager
-from descidb.rewards.token_rewarder import TokenRewarder
 from descidb.utils.logging_utils import get_logger
 
 # Get module logger
@@ -33,11 +30,8 @@ class Processor:
     def __init__(
         self,
         authorPublicKey: str,
-        db_manager: VectorDatabaseManager,
-        postgres_db_manager: PostgresDBManager,
         metadata_file: str,
         ipfs_api_key: str,
-        TokenRewarder: TokenRewarder,
         user_email: str,
         project_root: Optional[Path] = None,
     ):
@@ -46,21 +40,15 @@ class Processor:
 
         Args:
             authorPublicKey: Public key of the author
-            db_manager: Vector database manager instance
-            postgres_db_manager: PostgreSQL database manager instance
             metadata_file: Path to metadata file
             ipfs_api_key: API key for Lighthouse IPFS
-            TokenRewarder: Token rewarder instance
             user_email: Email of the user for creating user-specific folders
             project_root: Path to project root directory
         """
         self.logger = get_logger(__name__ + ".Processor")
-        self.db_manager = db_manager  # Vector Database Manager
-        self.TokenRewarder = TokenRewarder
         self.metadata_file = metadata_file
         self.authorPublicKey = authorPublicKey  # Author Public Key
         self.ipfs_api_key = ipfs_api_key  # IPFS API Key
-        self.postgres_db_manager = postgres_db_manager  # Postgres DB Manager
         self.convert_cache: Dict[str, str] = {}  # Cache for converted text
         self.chunk_cache: Dict[str, List[str]] = {}  # Cache for chunked text
         self.project_root = project_root or Path(__file__).parent.parent.parent
@@ -79,7 +67,6 @@ class Processor:
 
         # Paths for user-specific temporary files
         self.tmp_file_path = self.user_temp_dir / "tmp.txt"
-        self.cids_file_path = self.user_temp_dir / "cids.txt"
 
         # Set SSL certificate path explicitly
         os.environ["SSL_CERT_FILE"] = certifi.where()
@@ -190,6 +177,68 @@ class Processor:
         except Exception as e:
             self.logger.error(f"Error writing to file {file_path}: {e}")
 
+    def __read_mappings(self, mapping_file_path: Union[str, Path]) -> Dict[str, List[str]]:
+        """Read mappings from JSON file.
+        
+        Args:
+            mapping_file_path: Path to the mappings JSON file
+            
+        Returns:
+            Dictionary mapping PDF CIDs to list of database combinations
+        """
+        try:
+            if os.path.exists(mapping_file_path):
+                with open(mapping_file_path, "r") as file:
+                    return json.load(file)
+            return {}
+        except Exception as e:
+            self.logger.error(f"Error reading mappings from {mapping_file_path}: {e}")
+            return {}
+
+    def __write_mappings(self, mappings: Dict[str, List[str]], mapping_file_path: Union[str, Path]) -> None:
+        """Write mappings to JSON file.
+        
+        Args:
+            mappings: Dictionary mapping PDF CIDs to list of database combinations
+            mapping_file_path: Path to the mappings JSON file
+        """
+        try:
+            os.makedirs(os.path.dirname(str(mapping_file_path)), exist_ok=True)
+            with open(mapping_file_path, "w") as file:
+                json.dump(mappings, file, indent=2)
+            self.logger.debug(f"Updated mappings in {mapping_file_path}")
+        except Exception as e:
+            self.logger.error(f"Error writing mappings to {mapping_file_path}: {e}")
+
+    def __update_mappings(self, pdf_cid: str, db_combination: str) -> None:
+        """Update both global and user-specific mappings.
+        
+        Args:
+            pdf_cid: The PDF CID that was processed
+            db_combination: The database combination in format "converter_chunker_embedder"
+        """
+        # Global mappings file
+        global_mappings_path = self.temp_dir / "mappings.json"
+        global_mappings = self.__read_mappings(global_mappings_path)
+        
+        if pdf_cid not in global_mappings:
+            global_mappings[pdf_cid] = []
+        if db_combination not in global_mappings[pdf_cid]:
+            global_mappings[pdf_cid].append(db_combination)
+        
+        self.__write_mappings(global_mappings, global_mappings_path)
+        
+        # User-specific mappings file
+        user_mappings_path = self.user_temp_dir / "mappings.json"
+        user_mappings = self.__read_mappings(user_mappings_path)
+        
+        if pdf_cid not in user_mappings:
+            user_mappings[pdf_cid] = []
+        if db_combination not in user_mappings[pdf_cid]:
+            user_mappings[pdf_cid].append(db_combination)
+        
+        self.__write_mappings(user_mappings, user_mappings_path)
+
     def process(self, pdf_path: str, databases: List[dict], git_path: str) -> None:
         """
         Processes the PDF according to the list of database configurations passed.
@@ -234,15 +283,24 @@ class Processor:
         self.graph_db.create_relationship(
             metadata["pdf_ipfs_cid"], self.author_cid, "AUTHORED_BY"
         )
-
-        with open(self.cids_file_path, "a") as cid_file:
-            cid_file.write(metadata["pdf_ipfs_cid"] + "\n")
-            self.logger.debug(f"Recorded CID in {self.cids_file_path}")
-
+        
         for db_config in databases:
+            
             converter_func = db_config["converter"]
             chunker_func = db_config["chunker"]
             embedder_func = db_config["embedder"]
+            db_combination = f"{converter_func}_{chunker_func}_{embedder_func}"
+
+            # Check if this PDF + database combination already exists in global mappings
+            global_mappings_path = self.temp_dir / "mappings.json"
+            global_mappings = self.__read_mappings(global_mappings_path)
+            
+            if metadata["pdf_ipfs_cid"] in global_mappings and db_combination in global_mappings[metadata["pdf_ipfs_cid"]]:
+                self.logger.info(f"PDF {metadata['pdf_ipfs_cid']} with {db_combination} already processed globally. Skipping processing, updating user mappings only.")
+                self.__update_mappings(metadata["pdf_ipfs_cid"], db_combination)
+                continue
+
+            self.logger.info(f"Processing PDF {metadata['pdf_ipfs_cid']} with {db_combination}")
 
             # Step 2.1: Conversion
             # Check if markdown conversion already exists for this PDF CID
@@ -309,7 +367,7 @@ class Processor:
             else:
                 chunked_text = self.chunk_cache[chunk_cache_key]
 
-            for chunk_index, chunk_i in enumerate(chunked_text):
+            for _, chunk_i in enumerate(chunked_text):
                 self.__write_to_file(chunk_i, self.tmp_file_path)
 
                 chunk_text_ipfs_cid = self.__lighthouse_and_commit(
@@ -343,7 +401,9 @@ class Processor:
                 self.graph_db.create_relationship(
                     embedding_ipfs_cid, self.author_cid, "AUTHORED_BY"
                 )
-
+                
+            self.__update_mappings(metadata["pdf_ipfs_cid"], db_combination)
+        
     def get_metadata_for_doc(self, metadata_file: str, doc_id: str) -> Dict[str, Any]:
         """Retrieves metadata for the given document ID from the metadata file.
 

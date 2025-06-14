@@ -1,51 +1,38 @@
-# Create new file: descidb/server/app.py
-from fastapi import FastAPI, HTTPException, Depends
+# Heavy FastAPI server for resource-intensive endpoints (ingestion, processing)
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
-import json
+from typing import List, Optional
 import os
-import sys
 import itertools
 import asyncio
+import glob
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import your entry points
-from descidb.query.evaluation_agent import EvaluationAgent
 from descidb.utils.gdrive_scraper import scrape_gdrive_pdfs
 from descidb.core.processor_main import process_combination
+from descidb.db.db_creator_main import create_user_database
 
 # Setup FastAPI app
 app = FastAPI(
-    title="DeSciDB API",
-    description="API for DeSciDB - a decentralized RAG database",
+    title="DeSciDB Heavy API",
+    description="Heavy API for DeSciDB - handles resource-intensive processing tasks",
     version="0.1.0"
 )
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://localhost:3001"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-# Parent directory of the project (coophive folder)
-COOPHIVE_DIR = PROJECT_ROOT.parent
-
-# User-specific processing queues
-user_processing_locks: Dict[str, asyncio.Lock] = {}
 
 # Define request/response models
-class EvaluationRequest(BaseModel):
-    query: str
-    collections: List[str]
-    db_path: Optional[str] = None
-    model_name: str = "openai/gpt-3.5-turbo"
-    user_email: str
-
 class IngestGDriveRequest(BaseModel):
     drive_url: str = Field(..., description="Public Google Drive folder URL")
     converters: Optional[List[str]] = Field(
@@ -69,31 +56,8 @@ class IngestGDriveResponse(BaseModel):
     total_files: int
     processing_combinations: List[str]
 
-@app.post("/api/evaluate")
-async def evaluate_endpoint(request: EvaluationRequest):
-    """Endpoint for evaluation (maps to run_evaluation.sh)"""
-    try:
-        print(f"Evaluating query: {request.query}")
-        print(f"Collections: {request.collections}")
-        print(f"DB Path: {request.db_path}")
-        print(f"Model Name: {request.model_name}")
-        print(f"User Email: {request.user_email}")
-        # Initialize evaluation agent
-        agent = EvaluationAgent(model_name=request.model_name)
-        # Run query on collections
-        results_file = agent.query_collections(
-            query=request.query,
-            collection_names=request.collections,
-            db_path=request.db_path,
-        )
-        
-        # Read the results from the JSON file
-        with open(results_file, 'r') as f:
-            results = json.load(f)
-        
-        return results
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+class EmbedRequest(BaseModel):
+    user_email: str
 
 @app.post("/api/ingest/gdrive", response_model=IngestGDriveResponse)
 async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
@@ -105,6 +69,9 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
     It also creates a Cartesian product of all converter, chunker, and embedder combinations.
     """
     try:
+        print(f"[HEAVY] Processing Google Drive ingestion for user: {request.user_email}")
+        print(f"[HEAVY] Drive URL: {request.drive_url}")
+        
         # Validate the Google Drive URL
         if "drive.google.com" not in request.drive_url:
             raise HTTPException(
@@ -159,6 +126,8 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
             for converter, chunker, embedder in processing_combinations
         ]
         
+        print(f"[HEAVY] Will process {len(processing_combinations)} combinations")
+        
         # Download PDFs from Google Drive to user-specific papers folder
         downloaded_files = scrape_gdrive_pdfs(
             drive_url=request.drive_url,
@@ -174,38 +143,45 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
                 processing_combinations=combination_strings
             )
         
+        print(f"[HEAVY] Downloaded {len(downloaded_files)} files, starting processing...")
+        
         # Process each combination
         for converter, chunker, embedder in processing_combinations:
             try:
+                print(f"[HEAVY] Processing combination: {converter}_{chunker}_{embedder}")
                 # Call the processor for this specific combination with user-specific db path
                 await process_combination(
                     converter=converter,
                     chunker=chunker,
                     embedder=embedder,
                     papers_list=downloaded_files,
-                    db_path=user_papers_dir,
+                    user_papers_dir=user_papers_dir,
                     user_email=request.user_email
                 )
+                
+                # Create user database after processing
             except Exception as e:
                 # Log the error but continue with other combinations
-                print(f"Error processing combination {converter}_{chunker}_{embedder}: {str(e)}")
+                print(f"[HEAVY] Error processing combination {converter}_{chunker}_{embedder}: {str(e)}")
         
-        # Clean up: Delete all PDF files after processing
-        # papers_dir = "papers"
-        # deleted_files = []
-        # if os.path.exists(papers_dir):
-        #     for filename in downloaded_files:
-        #         file_path = os.path.join(papers_dir, filename)
-        #         try:
-        #             if os.path.exists(file_path) and filename.lower().endswith('.pdf'):
-        #                 os.remove(file_path)
-        #                 deleted_files.append(filename)
-        #                 print(f"Deleted: {filename}")
-        #         except Exception as e:
-        #             print(f"Error deleting {filename}: {str(e)}")
-        
-        # print(f"Cleanup complete: Deleted {len(deleted_files)} PDF files from papers/ directory")
-        
+        # Clean up: Delete all PDFs from user's papers directory after processing
+        try:
+            print(f"[HEAVY] Cleaning up PDFs from user directory: {user_papers_dir}")
+            pdf_files = glob.glob(os.path.join(user_papers_dir, "*.pdf"))
+            deleted_count = 0
+            for pdf_file in pdf_files:
+                try:
+                    os.remove(pdf_file)
+                    deleted_count += 1
+                    print(f"[HEAVY] Deleted: {os.path.basename(pdf_file)}")
+                except Exception as delete_error:
+                    print(f"[HEAVY] Error deleting {pdf_file}: {str(delete_error)}")
+            
+            print(f"[HEAVY] Successfully deleted {deleted_count} PDF files from user directory")
+        except Exception as cleanup_error:
+            print(f"[HEAVY] Error during PDF cleanup: {str(cleanup_error)}")
+            # Don't fail the entire request if cleanup fails
+
         return IngestGDriveResponse(
             success=True,
             message=f"Successfully processed {len(downloaded_files)} PDF files with {len(processing_combinations)} combinations and cleaned up papers/ directory.",
@@ -219,6 +195,28 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error ingesting PDFs: {str(e)}")
 
+@app.post("/api/embed")
+async def embed_endpoint(request: EmbedRequest):
+    """Endpoint to create user database - resource intensive"""
+    try:
+        print(f"[HEAVY] Creating database for user: {request.user_email}")
+        
+        # Create user database
+        create_user_database(request.user_email)
+        
+        return {
+            "success": True,
+            "message": f"Successfully created database for user: {request.user_email}",
+            "user_email": request.user_email
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating user database: {str(e)}")
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "service": "heavy"}
+
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    uvicorn.run(app, host="0.0.0.0", port=5002) 

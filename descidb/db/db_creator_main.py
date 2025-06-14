@@ -8,6 +8,7 @@ with scientific document data for the DeSciDB system.
 import os
 from pathlib import Path
 from typing import List
+import json
 
 import yaml
 from dotenv import load_dotenv
@@ -71,8 +72,63 @@ def create_user_database(user_email: str):
         uri=neo4j_uri, username=neo4j_username, password=neo4j_password
     )
 
-    # Extract database components
-    components = config["components"]
+    # Look for user-specific mappings file
+    user_temp_path = PROJECT_ROOT / "temp" / user_email
+    mappings_file_path = user_temp_path / "mappings.json"
+    mapping_embed_file_path = user_temp_path / "mapping_embed.json"
+
+    if not mappings_file_path.exists():
+        logger.error(f"No mappings.json file found for user {user_email}. Please run processor first.")
+        logger.error(f"Checked path: {mappings_file_path}")
+        return
+
+    # Load mappings
+    with open(mappings_file_path, "r") as file:
+        mappings = json.load(file)
+
+    if not mappings:
+        logger.warning(f"Empty mappings file for user {user_email}")
+        return
+
+    # Load existing embedded mappings if they exist
+    mapping_embed = {}
+    if mapping_embed_file_path.exists():
+        try:
+            with open(mapping_embed_file_path, "r") as file:
+                mapping_embed = json.load(file)
+            logger.info(f"Loaded existing mapping_embed.json with {len(mapping_embed)} entries")
+        except Exception as e:
+            logger.warning(f"Error loading mapping_embed.json: {e}. Starting fresh.")
+            mapping_embed = {}
+    else:
+        logger.info("No existing mapping_embed.json found. Starting fresh.")
+
+    # Find what needs to be processed (items in mappings but not in mapping_embed)
+    items_to_process = {}
+    for pdf_cid, db_combinations in mappings.items():
+        if pdf_cid not in mapping_embed:
+            # CID not embedded at all
+            items_to_process[pdf_cid] = db_combinations
+        else:
+            # CID exists, check which combinations are missing
+            existing_combinations = set(mapping_embed[pdf_cid])
+            new_combinations = [combo for combo in db_combinations if combo not in existing_combinations]
+            if new_combinations:
+                items_to_process[pdf_cid] = new_combinations
+
+    if not items_to_process:
+        logger.info("No new items to process. All mappings are already embedded.")
+        return
+
+    logger.info(f"Found {sum(len(combos) for combos in items_to_process.values())} new CID-database combinations to process")
+
+    # Get all unique database names from items to process
+    db_names = set()
+    for pdf_cid, db_combinations in items_to_process.items():
+        for db_combination in db_combinations:
+            db_names.add(db_combination)
+      
+    logger.info(f"Discovered {len(db_names)} unique databases: {sorted(db_names)}")
 
     # Set up user-specific vector database path
     base_db_path = PROJECT_ROOT / config["vector_db"]["path"]
@@ -80,56 +136,71 @@ def create_user_database(user_email: str):
     os.makedirs(user_db_path, exist_ok=True)
     logger.info(f"Using database path: {user_db_path}")
 
-    # Initialize database manager
-    vector_db_manager = VectorDatabaseManager(components, db_path=str(user_db_path))
+    # Initialize database manager with the specific db names found in mappings
+    vector_db_manager = VectorDatabaseManager(list(db_names), db_path=str(user_db_path))
     create_db = DatabaseCreator(graph, vector_db_manager)
 
-    # Construct relationship paths from components
-    relationship_path = []
-    component_type_mapping = {
-        "converter": "CONVERTED",
-        "chunker": "CHUNKED",
-        "embedder": "EMBEDDED"
-    }
+    # Process only the new CID-database combinations
+    total_processed = 0
+    successfully_processed = {}
     
-    for component_type, component_list in components.items():
-        for component in component_list:
-            relationship = f"{component_type_mapping[component_type]}_BY_{component}"
-            relationship_path.append(relationship)
+    for pdf_cid, db_combinations in items_to_process.items():
+        logger.info(f"Processing CID {pdf_cid} with {len(db_combinations)} new database combinations")
+        
+        successfully_processed[pdf_cid] = []
+        
+        for db_combination in db_combinations:
+            # Parse database combination (format: converter_chunker_embedder)
+            # Handle case where chunker name might contain underscores (e.g., fixed_length)
+            parts = db_combination.split("_")
+            if len(parts) < 3:
+                logger.error(f"Invalid database combination format: {db_combination}")
+                continue
+            
+            # For combinations like "markitdown_fixed_length_bge", we need to parse carefully
+            # The format should be: converter_chunker_embedder
+            # If we have more than 3 parts, the middle parts belong to the chunker
+            converter = parts[0]
+            embedder = parts[-1]  # Last part is always the embedder
+            chunker = "_".join(parts[1:-1])  # Middle parts form the chunker name
+            
+            # Construct relationship path for this combination
+            relationship_path = [
+                f"CONVERTED_BY_{converter}",
+                f"CHUNKED_BY_{chunker}",
+                f"EMBEDDED_BY_{embedder}"
+            ]
+            
+            try:
+                logger.info(f"Adding CID {pdf_cid} to database '{db_combination}'")
+                create_db.process_paths(pdf_cid, relationship_path, db_combination)
+                successfully_processed[pdf_cid].append(db_combination)
+                total_processed += 1
+            except Exception as e:
+                logger.error(f"Error processing {pdf_cid} with {db_combination}: {e}")
+                continue
 
-    # Define database name
-    converter = components["converter"][0]
-    chunker = components["chunker"][0]
-    embedder = components["embedder"][0]
-    db_name = f"{converter}_{chunker}_{embedder}"
+    # Update mapping_embed.json with successfully processed items
+    for pdf_cid, successful_combinations in successfully_processed.items():
+        if successful_combinations:  # Only update if we successfully processed some combinations
+            if pdf_cid in mapping_embed:
+                # Extend existing combinations
+                existing_set = set(mapping_embed[pdf_cid])
+                new_set = set(successful_combinations)
+                mapping_embed[pdf_cid] = list(existing_set.union(new_set))
+            else:
+                # Add new CID
+                mapping_embed[pdf_cid] = successful_combinations
 
-    # Look for user-specific CIDs file paths
-    temp_dir = PROJECT_ROOT / "temp" / user_email
-    cids_file_paths = [
-        temp_dir / "cids.txt",  # User-specific temp directory
-    ]
+    # Save updated mapping_embed.json
+    try:
+        with open(mapping_embed_file_path, "w") as file:
+            json.dump(mapping_embed, file, indent=2)
+        logger.info(f"Updated mapping_embed.json with {total_processed} new entries")
+    except Exception as e:
+        logger.error(f"Error saving mapping_embed.json: {e}")
 
-    cids_file = None
-    for path in cids_file_paths:
-        if path.exists():
-            cids_file = path
-            logger.info(f"Found CIDs file: {cids_file}")
-            break
-
-    if cids_file is None:
-        logger.error(f"No cids.txt file found for user {user_email}. Please run processor first.")
-        logger.error(f"Checked paths: {[str(p) for p in cids_file_paths]}")
-        return
-
-    # Process CIDs
-    with open(cids_file, "r") as file:
-        counter = 0
-        for line in file:
-            start_cid = line.strip()
-            if start_cid:
-                logger.info(f"Processing CID #{counter}: {start_cid}")
-                create_db.process_paths(start_cid, relationship_path, db_name)
-                counter += 1
+    logger.info(f"Completed processing {total_processed} CID-database combinations for user {user_email}")
 
 
 def main():

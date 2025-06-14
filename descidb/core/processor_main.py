@@ -17,7 +17,6 @@ from dotenv import load_dotenv
 
 from descidb.core.processor import Processor
 from descidb.db.chroma_client import VectorDatabaseManager
-from descidb.db.postgres_db import PostgresDBManager
 from descidb.rewards.token_rewarder import TokenRewarder
 from descidb.utils.logging_utils import get_logger
 
@@ -59,7 +58,6 @@ def test_processor():
 
     # Process configuration
     processing_config = config["processing"]
-    postgres_config = config["postgres"]
     author_config = config["author"]
     api_keys = config["api_keys"]
 
@@ -73,13 +71,6 @@ def test_processor():
         api_keys["lighthouse_token"].replace("${", "").replace("}", "")
     )
 
-    db_manager_postgres = PostgresDBManager(
-        host=postgres_config["host"],
-        port=postgres_config["port"],
-        user=postgres_config["user"],
-        password=postgres_config["password"],
-    )
-
     # Get papers
     papers = [
         os.path.join(papers_directory, f)
@@ -90,23 +81,6 @@ def test_processor():
     # Setup database configurations
     databases = config["databases"]
 
-    # Extract components from database configurations
-    components = {
-        "converter": list(set([db_config["converter"] for db_config in databases])),
-        "chunker": list(set([db_config["chunker"] for db_config in databases])),
-        "embedder": list(set([db_config["embedder"] for db_config in databases])),
-    }
-
-    db_manager = VectorDatabaseManager(components=components)
-
-    tokenRewarder = TokenRewarder(
-        db_components=components,
-        host=postgres_config["host"],
-        port=postgres_config["port"],
-        user=postgres_config["user"],
-        password=postgres_config["password"],
-    )
-
     # Generate db_names from configurations
     for db_config in databases:
         converter = db_config["converter"]
@@ -116,62 +90,60 @@ def test_processor():
         db_name = f"{converter}_{chunker}_{embedder}"
         db_config["db_name"] = db_name
 
-    db_names = [db_config["db_name"] for db_config in databases]
-
-    db_manager_postgres.create_databases(db_names)
 
     processor = Processor(
         authorPublicKey=author_config["public_key"],
-        db_manager=db_manager,
-        postgres_db_manager=db_manager_postgres,
         metadata_file=str(metadata_file),
         ipfs_api_key=lighthouse_api_key,
-        TokenRewarder=tokenRewarder,
         user_email=author_config["email"],
         project_root=PROJECT_ROOT,
     )
 
-    for paper in papers:
-        logger.info(f"Processing {paper}...")
-        random_data = os.urandom(32)
-        hash_value = hashlib.sha256(random_data).hexdigest()
+    try:
+        for paper in papers:
+            logger.info(f"Processing {paper}...")
+            random_data = os.urandom(32)
+            hash_value = hashlib.sha256(random_data).hexdigest()
 
-        paper_dir = storage_directory / hash_value
-        try:
-            os.makedirs(paper_dir, exist_ok=True)
-            # Store the current directory
-            current_dir = os.getcwd()
-            # Change to the paper directory for git operations
-            os.chdir(paper_dir)
-            subprocess.run(["git", "init"], check=True)
-            # Change back to the original directory after git init
-            os.chdir(current_dir)
-        except Exception as e:
-            logger.error(f"Error initializing git repository: {e}")
-            continue
+            paper_dir = storage_directory / hash_value
+            try:
+                os.makedirs(paper_dir, exist_ok=True)
+                # Store the current directory
+                current_dir = os.getcwd()
+                # Change to the paper directory for git operations
+                os.chdir(paper_dir)
+                subprocess.run(["git", "init"], check=True)
+                # Change back to the original directory after git init
+                os.chdir(current_dir)
+            except Exception as e:
+                logger.error(f"Error initializing git repository: {e}")
+                continue
 
-        processor.process(pdf_path=paper, databases=databases, git_path=str(paper_dir))
+            processor.process(pdf_path=paper, databases=databases, git_path=str(paper_dir))
 
-        time.sleep(5)
+            time.sleep(5)
 
-    # Clean up: Delete all PDF files after processing
-    logger.info("Starting cleanup: Deleting processed PDF files...")
-    deleted_files = []
-    
-    for paper_path in papers:
-        try:
-            if os.path.exists(paper_path) and paper_path.lower().endswith('.pdf'):
-                filename = os.path.basename(paper_path)
-                os.remove(paper_path)
-                deleted_files.append(filename)
-                logger.info(f"Deleted: {filename}")
-        except Exception as e:
-            logger.error(f"Error deleting {paper_path}: {str(e)}")
-    
-    logger.info(f"Cleanup complete: Deleted {len(deleted_files)} PDF files from papers/ directory")
+        # Clean up: Delete all PDF files after processing
+        logger.info("Starting cleanup: Deleting processed PDF files...")
+        deleted_files = []
+        
+        for paper_path in papers:
+            try:
+                if os.path.exists(paper_path) and paper_path.lower().endswith('.pdf'):
+                    filename = os.path.basename(paper_path)
+                    os.remove(paper_path)
+                    deleted_files.append(filename)
+                    logger.info(f"Deleted: {filename}")
+            except Exception as e:
+                logger.error(f"Error deleting {paper_path}: {str(e)}")
+
+        logger.info(f"Cleanup complete: Deleted {len(deleted_files)} PDF files from papers/ directory")
+    except Exception as e:
+        logger.error(f"Error in test_processor: {e}")
+        raise
 
 
-async def process_combination(converter: str, chunker: str, embedder: str, papers_list: List[str], db_path: str, user_email: str):
+async def process_combination(converter: str, chunker: str, embedder: str, papers_list: List[str], user_papers_dir: str, user_email: str):
     """
     Process papers for a specific combination of converter, chunker, and embedder.
     
@@ -180,6 +152,8 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
         chunker: The chunker to use (e.g., 'paragraph', 'sentence', 'word', 'fixed_length')
         embedder: The embedder to use (e.g., 'openai', 'nvidia', 'bge')
         papers_list: List of paper file paths to process
+        user_papers_dir: Path to the papers directory (user-specific)
+        user_email: Email of the user for user-specific database path
     """
     logger.info(f"Processing combination: {converter}_{chunker}_{embedder}")
     
@@ -188,12 +162,11 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
     
     # Process configuration
     processing_config = config["processing"]
-    postgres_config = config["postgres"]
     author_config = config["author"]
     api_keys = config["api_keys"]
 
     # Setup paths
-    papers_directory = Path(db_path)
+    papers_directory = Path(user_papers_dir)
     metadata_file = PROJECT_ROOT / processing_config["metadata_file"]
     storage_directory = COOPHIVE_DIR / processing_config["storage_directory"]
 
@@ -212,41 +185,10 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
     
     databases = [db_config]
 
-    # Setup components for this combination
-    components = {
-        "converter": [converter],
-        "chunker": [chunker],
-        "embedder": [embedder],
-    }
-
-    db_manager_postgres = PostgresDBManager(
-        host=postgres_config["host"],
-        port=postgres_config["port"],
-        user=postgres_config["user"],
-        password=postgres_config["password"],
-    )
-
-    db_manager = VectorDatabaseManager(components=components)
-
-    tokenRewarder = TokenRewarder(
-        db_components=components,
-        host=postgres_config["host"],
-        port=postgres_config["port"],
-        user=postgres_config["user"],
-        password=postgres_config["password"],
-    )
-
-    # Create database for this combination
-    db_names = [db_config["db_name"]]
-    db_manager_postgres.create_databases(db_names)
-
     processor = Processor(
         authorPublicKey=author_config["public_key"],
-        db_manager=db_manager,
-        postgres_db_manager=db_manager_postgres,
         metadata_file=str(metadata_file),
         ipfs_api_key=lighthouse_api_key,
-        TokenRewarder=tokenRewarder,
         user_email=user_email,
         project_root=PROJECT_ROOT,
     )

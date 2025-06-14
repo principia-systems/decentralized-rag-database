@@ -16,13 +16,9 @@ from descidb.db.chroma_client import VectorDatabaseManager
 class TestVectorDatabaseManager:
     """Test suite for VectorDatabaseManager class."""
 
-    def test_init_with_required_components(self):
-        """Test initialization with required components."""
-        components = {
-            "converter": ["openai"],
-            "chunker": ["paragraph"],
-            "embedder": ["openai"],
-        }
+    def test_init_with_db_names(self):
+        """Test initialization with database names."""
+        db_names = ["openai_paragraph_openai"]
 
         with patch("chromadb.PersistentClient") as mock_client:
             with patch("os.makedirs") as mock_makedirs:
@@ -31,26 +27,35 @@ class TestVectorDatabaseManager:
                 mock_instance.get_or_create_collection.return_value = MagicMock()
 
                 # Initialize the manager
-                manager = VectorDatabaseManager(components=components)
+                manager = VectorDatabaseManager(db_names)
 
                 # Verify
                 mock_makedirs.assert_called_once()
                 assert manager.db_names == ["openai_paragraph_openai"]
                 assert mock_instance.get_or_create_collection.call_count == 1
 
-    def test_init_with_missing_components_raises_error(self):
-        """Test initialization with missing components raises error."""
-        # Missing 'chunker' key
-        components = {"converter": ["openai"], "embedder": ["openai"]}
+    def test_init_with_empty_db_names_raises_error(self):
+        """Test initialization with empty db_names raises error."""
+        db_names = []
 
         with pytest.raises(ValueError) as excinfo:
-            VectorDatabaseManager(components=components)
+            VectorDatabaseManager(db_names)
 
-        assert "Components dictionary must have" in str(excinfo.value)
+        assert "db_names must be a non-empty list" in str(excinfo.value)
+
+    def test_init_with_invalid_db_names_type_raises_error(self):
+        """Test initialization with invalid db_names type raises error."""
+        db_names = "not_a_list"
+
+        with pytest.raises(ValueError) as excinfo:
+            VectorDatabaseManager(db_names)
+
+        assert "db_names must be a non-empty list" in str(excinfo.value)
 
     def test_init_with_custom_db_path(self):
         """Test initialization with custom database path."""
         custom_path = "/tmp/test_chromadb"
+        db_names = ["openai_paragraph_openai"]
 
         with patch("chromadb.PersistentClient") as mock_client:
             with patch("os.makedirs") as mock_makedirs:
@@ -58,18 +63,21 @@ class TestVectorDatabaseManager:
                 mock_instance = mock_client.return_value
                 mock_instance.get_or_create_collection.return_value = MagicMock()
 
+                # Initialize manager with custom path
+                VectorDatabaseManager(db_names, db_path=custom_path)
+
                 # Verify
                 mock_makedirs.assert_called_once_with(Path(custom_path), exist_ok=True)
                 mock_client.assert_called_once_with(path=custom_path)
                 assert mock_instance.get_or_create_collection.call_count == 1
 
     def test_initialize_databases(self):
-        """Test that initialize_databases creates collections for each combination."""
-        components = {
-            "converter": ["openai", "markdown"],
-            "chunker": ["paragraph", "fixed_length"],
-            "embedder": ["openai", "huggingface"],
-        }
+        """Test that initialize_databases creates collections for each database name."""
+        db_names = [
+            "openai_paragraph_openai",
+            "markdown_fixed_length_huggingface",
+            "marker_sentence_bge"
+        ]
 
         with patch("chromadb.PersistentClient") as mock_client:
             with patch("os.makedirs"):
@@ -78,19 +86,15 @@ class TestVectorDatabaseManager:
                 mock_instance.get_or_create_collection.return_value = MagicMock()
 
                 # Initialize the manager
-                manager = VectorDatabaseManager(components=components)
+                manager = VectorDatabaseManager(db_names)
 
                 # Verify
-                assert len(manager.db_names) == 8  # 2*2*2 combinations
-                assert mock_instance.get_or_create_collection.call_count == 8
+                assert len(manager.db_names) == 3
+                assert mock_instance.get_or_create_collection.call_count == 3
 
     def test_insert_document_valid_db(self):
         """Test inserting document into a valid database."""
-        components = {
-            "converter": ["openai"],
-            "chunker": ["paragraph"],
-            "embedder": ["openai"],
-        }
+        db_names = ["openai_paragraph_openai"]
         db_name = "openai_paragraph_openai"
         embedding = [0.1, 0.2, 0.3]
         metadata = {"content_cid": "test_cid", "other": "value"}
@@ -105,7 +109,7 @@ class TestVectorDatabaseManager:
                 mock_instance.get_or_create_collection.return_value = MagicMock()
 
                 # Initialize the manager
-                manager = VectorDatabaseManager(components=components)
+                manager = VectorDatabaseManager(db_names)
 
                 # Insert document
                 manager.insert_document(db_name, embedding, metadata, doc_id)
@@ -121,11 +125,7 @@ class TestVectorDatabaseManager:
 
     def test_insert_document_invalid_db(self):
         """Test inserting document into an invalid database raises error."""
-        components = {
-            "converter": ["openai"],
-            "chunker": ["paragraph"],
-            "embedder": ["openai"],
-        }
+        db_names = ["openai_paragraph_openai"]
         db_name = "nonexistent_db"
         embedding = [0.1, 0.2, 0.3]
         metadata = {"content_cid": "test_cid"}
@@ -138,7 +138,7 @@ class TestVectorDatabaseManager:
                 mock_instance.get_or_create_collection.return_value = MagicMock()
 
                 # Initialize the manager
-                manager = VectorDatabaseManager(components=components)
+                manager = VectorDatabaseManager(db_names)
 
                 # Attempt to insert document into nonexistent DB
                 with pytest.raises(ValueError) as excinfo:
@@ -148,11 +148,7 @@ class TestVectorDatabaseManager:
 
     def test_print_all_metadata(self, capsys):
         """Test that print_all_metadata retrieves and prints metadata from all collections."""
-        components = {
-            "converter": ["openai"],
-            "chunker": ["paragraph"],
-            "embedder": ["openai"],
-        }
+        db_names = ["openai_paragraph_openai"]
         db_name = "openai_paragraph_openai"
         metadata = [{"content_cid": "test_cid", "other": "value"}]
 
@@ -168,7 +164,7 @@ class TestVectorDatabaseManager:
                 mock_collection.get.return_value = {"metadatas": metadata}
 
                 # Initialize the manager and call the method
-                db_manager = VectorDatabaseManager(components=components)
+                db_manager = VectorDatabaseManager(db_names)
 
                 # Call the method
                 with patch("builtins.print") as mock_print:

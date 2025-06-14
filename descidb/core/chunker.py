@@ -40,6 +40,7 @@ def chunk(
         "paragraph": paragraph,
         "sentence": sentence,
         "word": word,
+        "fixed_length": fixed_length,
     }
     
     return chunking_methods[chunker_type](text=input_text)
@@ -47,8 +48,9 @@ def chunk(
 
 def paragraph(text: str) -> List[str]:
     """Chunk the text by paragraphs."""
-    paragraphs = text.split("\n\n")
-    return [p.strip() for p in paragraphs if p.strip()]
+    # paragraphs = text.split("\n\n")
+    # return [p.strip() for p in paragraphs if p.strip()]
+    return [text]
 
 
 def sentence(text: str) -> List[str]:
@@ -65,4 +67,4 @@ def word(text: str) -> List[str]:
 
 def fixed_length(text: str) -> List[str]:
     """Chunk the text into fixed-length chunks."""
-    return [text[i : i + 300] for i in range(0, len(text), 300)]
+    return [text[i : i + 600] for i in range(0, len(text), 600)]

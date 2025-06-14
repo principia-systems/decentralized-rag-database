@@ -70,8 +70,8 @@ echo "Host: $HOST, Port: $PORT, Environment: $ENV"
 
 if [ "$ENV" = "production" ]; then
     echo "Running in production mode with $WORKERS workers"
-    poetry run uvicorn descidb.server.app:app --host "$HOST" --port "$PORT" --workers "$WORKERS" --log-level "$LOG_LEVEL"
+    poetry run uvicorn descidb.server.single_server:app --host "$HOST" --port "$PORT" --workers "$WORKERS" --log-level "$LOG_LEVEL"
 else
     echo "Running in development mode with auto-reload enabled"
-    poetry run uvicorn descidb.server.app:app --host "$HOST" --port "$PORT" --reload --log-level "$LOG_LEVEL"
+    poetry run uvicorn descidb.server.single_server:app --host "$HOST" --port "$PORT" --reload --log-level "$LOG_LEVEL"
 fi 
