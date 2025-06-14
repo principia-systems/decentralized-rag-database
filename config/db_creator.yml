@@ -6,19 +6,10 @@ neo4j:
   username: ${NEO4J_USERNAME}
   password: ${NEO4J_PASSWORD}
 
-# Database components
-components:
-  converter:
-    - openai
-  chunker:
-    - paragraph
-  embedder:
-    - openai
+# User configuration
+user:
+  email: "vardhanshorewala@berkeley.edu"
 
 # Vector database configuration
 vector_db:
   path: descidb/database
-# CIDs file paths to check
-cids_file_paths:
-  - cids.txt
-  - temp/cids.txt

@@ -1,16 +1,15 @@
 """
-ChromaDB vector database client for DeSciDB.
+This module contains the ChromaDB client for managing vector databases in DeSciDB.
 
-This module provides a VectorDatabaseManager class for managing ChromaDB collections
-used to store document embeddings and perform vector similarity searches.
+ChromaDB is used as the vector database for storing and querying document embeddings.
 """
 
-import itertools
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 import chromadb
+import numpy as np
 
 
 class VectorDatabaseManager:
@@ -21,30 +20,22 @@ class VectorDatabaseManager:
     collections, which are used to store document embeddings.
     """
 
-    def __init__(self, components: dict, db_path: Optional[str] = None):
+    def __init__(self, db_names: List[str], db_path: Optional[str] = None):
         """
-        Initializes databases based on the Cartesian product of 'convert', 'chunker', and 'embedder'.
+        Initializes databases based on the provided list of database names.
 
         Args:
-            components: A dictionary with keys 'converter', 'chunker', and 'embedder',
-                       each containing a list of values.
+            db_names: A list of database names to create (e.g., ['openai_paragraph_openai', 'marker_sentence_bge']).
             db_path: Optional path to the database directory. If not provided,
                     will use the default 'database' directory in the descidb package.
 
         Raises:
-            ValueError: If the components dictionary doesn't have the required keys.
+            ValueError: If db_names is empty or not a list.
         """
-        if not all(key in components for key in ["converter", "chunker", "embedder"]):
-            raise ValueError(
-                "Components dictionary must have 'converter', 'chunker', and 'embedder' keys with lists of values."
-            )
+        if not isinstance(db_names, list) or not db_names:
+            raise ValueError("db_names must be a non-empty list of database names.")
 
-        self.db_names = [
-            f"{c}_{ch}_{e}"
-            for c, ch, e in itertools.product(
-                components["converter"], components["chunker"], components["embedder"]
-            )
-        ]
+        self.db_names = db_names
 
         # Use the provided db_path or create a default path
         if db_path is None:

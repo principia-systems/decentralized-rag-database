@@ -18,9 +18,6 @@ logger = get_logger(__name__)
 
 load_dotenv()
 
-# Get the project root directory
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-
 
 class DatabaseCreator:
     """

@@ -1,17 +1,13 @@
 # Evaluation Configuration
 
+# User configuration
+user_email: "vardhanshorewala@gmail.com"
+
 # Model parameters
 model_name: "openai/gpt-3.5-turbo-0613"
 
 # Query parameters
-query: "What is MINT-DFC"
-
-# Collection parameters
-collections:
-  - openai_paragraph_openai
-  - openai_fixed_length_openai
-  - marker_paragraph_openai
-  - marker_fixed_length_openai
+query: "What are the citations for the paper 'Improving K-means clustering with enhanced firefly algorithms'?"
 
 # Database path (null for default)
 db_path: null

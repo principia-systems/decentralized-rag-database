@@ -8,6 +8,7 @@ language queries and retrieving relevant document chunks.
 import json
 import os
 from pathlib import Path
+from typing import List
 
 import chromadb
 from dotenv import load_dotenv
@@ -21,7 +22,42 @@ logger = get_logger(__name__)
 load_dotenv()
 
 
-def query_collection(collection_name, user_query, db_path=None):
+def discover_user_collections(user_email: str, db_path: str = None) -> List[str]:
+    """
+    Discover all available collections for a specific user.
+    
+    Args:
+        user_email: Email of the user to discover collections for
+        db_path: Optional path to database directory. If None, uses default user path
+        
+    Returns:
+        List of collection names available for the user
+    """
+    try:
+        # Construct user-specific database path
+        db_path = Path(db_path)
+        
+        if not db_path.exists():
+            logger.warning(f"Database path does not exist: {db_path}")
+            return []
+        
+        logger.info(f"Discovering collections in: {db_path}")
+        
+        # Connect to ChromaDB and list collections
+        client = chromadb.PersistentClient(path=str(db_path))
+        collections = client.list_collections()
+        
+        collection_names = [collection.name for collection in collections]
+        logger.info(f"Found {len(collection_names)} collections for user {user_email}: {collection_names}")
+        
+        return collection_names
+        
+    except Exception as e:
+        logger.error(f"Error discovering collections for user {user_email}: {e}")
+        return []
+
+
+def query_collection(collection_name, user_query, db_path=None, user_email=None):
     """
     Query a ChromaDB collection with a natural language query.
 
@@ -35,7 +71,7 @@ def query_collection(collection_name, user_query, db_path=None):
         collection_name: Name of the ChromaDB collection to query
         user_query: Natural language query string
         db_path: Optional path to ChromaDB directory. If None, uses default path
-        embedder_type: Type of embedder to use (openai, nvidia). If None, extracted from collection_name
+        user_email: Optional user email for user-specific database path
 
     Returns:
         JSON string containing query results with metadata and similarity scores
@@ -57,7 +93,10 @@ def query_collection(collection_name, user_query, db_path=None):
         if db_path is None:
             # Get the directory where this module is located and use its database subdirectory
             module_dir = Path(__file__).parent.parent
-            db_path = module_dir / "database"
+            if user_email:
+                db_path = module_dir / "database" / user_email
+            else:
+                db_path = module_dir / "database"
         else:
             db_path = Path(db_path)
 
@@ -67,6 +106,8 @@ def query_collection(collection_name, user_query, db_path=None):
         logger.info(
             f"Querying collection '{collection_name}' with: '{user_query[:50]}...'"
         )
+        logger.info(f"Using database path: {db_path}")
+        
         client = chromadb.PersistentClient(path=str(db_path))
 
         # Get collection

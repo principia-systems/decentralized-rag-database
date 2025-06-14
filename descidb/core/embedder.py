@@ -23,9 +23,9 @@ logger = get_logger(__name__)
 load_dotenv(override=True)
 
 
-def embed_from_url(embeder_type: EmbedderType, input_url: str) -> Embedding:
+def embed_from_url(embeder_type: EmbedderType, input_url: str, user_temp_dir: str = "./tmp") -> Embedding:
     """Embed based on the specified embedding type."""
-    donwload_path = download_from_url(url=input_url)
+    donwload_path = download_from_url(url=input_url, output_folder=user_temp_dir)
 
     with open(donwload_path, "r") as file:
         input_text = file.read()

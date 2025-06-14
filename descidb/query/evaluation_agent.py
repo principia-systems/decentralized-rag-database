@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from dotenv import load_dotenv
 
-from descidb.query.query_db import query_collection
+from descidb.query.query_db import query_collection, discover_user_collections
 from descidb.utils.logging_utils import get_logger
 
 # Get module logger
@@ -52,32 +52,49 @@ class EvaluationAgent:
             raise ValueError("OpenRouter API key not configured")
 
     def query_collections(
-        self, query: str, collection_names: List[str], db_path: Optional[str] = None
+        self, query: str, db_path: Optional[str] = None, user_email: Optional[str] = None
     ) -> str:
         """
         Query multiple collections with the same query and store results.
 
         Args:
             query: Natural language query string
-            collection_names: List of collection names to query
             db_path: Optional path to ChromaDB directory
+            user_email: Optional user email for user-specific temp directory and auto-discovery
 
         Returns:
             Path to the temporary JSON file containing all results
         """
         timestamp = int(time.time())
-        results_file = self.temp_dir / f"query_results_{timestamp}.json"
+        
+        # Use user-specific temp directory if user_email is provided
+        if user_email:
+            user_temp_dir = self.temp_dir / user_email / "evaluation"
+            os.makedirs(user_temp_dir, exist_ok=True)
+            results_file = user_temp_dir / f"query_results_{timestamp}.json"
+        else:
+            results_file = self.temp_dir / f"query_results_{timestamp}.json"
+
+        # Auto-discover collections if not provided and user_email is available
+        logger.info(f"Auto-discovering collections for user: {user_email}")
+        collection_names = discover_user_collections(user_email, db_path)
+        if not collection_names:
+            logger.warning(f"No collections found for user: {user_email}")
+            collection_names = []
 
         collection_results: Dict[str, Any] = {}
         all_results: Dict[str, Any] = {
             "query": query,
+            "user_email": user_email,
+            "total_collections": len(collection_names),
+            "collection_names": collection_names,
             "collection_results": collection_results,
         }
 
         for collection_name in collection_names:
             logger.info(f"Querying collection: {collection_name}")
             try:
-                result_json = query_collection(collection_name, query, db_path)
+                result_json = query_collection(collection_name, query, db_path, user_email)
                 result_data = json.loads(result_json)
                 collection_results[collection_name] = result_data
             except Exception as e:
