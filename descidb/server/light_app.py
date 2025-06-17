@@ -1,6 +1,6 @@
 # Light FastAPI server for quick endpoints (evaluation, status)
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 import json
 from pathlib import Path
@@ -26,6 +26,7 @@ app.add_middleware(
 )
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
+WHITELIST_PATH = Path(__file__).parent / "whitelisted_emails.txt"
 
 # Define request/response models
 class EvaluationRequest(BaseModel):
@@ -42,6 +43,37 @@ class UserStatusResponse(BaseModel):
     completion_percentage: float
     papers_directory: str
     mappings_file_path: str
+
+class EmailValidationRequest(BaseModel):
+    email: EmailStr
+
+class EmailValidationResponse(BaseModel):
+    isValid: bool
+
+def load_whitelisted_emails() -> set:
+    """Load whitelisted emails from the file"""
+    if not WHITELIST_PATH.exists():
+        return set()
+    
+    with open(WHITELIST_PATH, 'r') as f:
+        # Skip comments and empty lines, strip whitespace
+        emails = {line.strip() for line in f 
+                 if line.strip() and not line.startswith('#')}
+    return emails
+
+@app.post("/api/auth/validate-email", response_model=EmailValidationResponse)
+async def validate_email(request: EmailValidationRequest):
+    """Validate if an email is whitelisted"""
+    try:
+        whitelisted_emails = load_whitelisted_emails()
+        email = request.email.lower()
+        
+        # Check if email is in whitelist
+        is_valid = email in whitelisted_emails
+        
+        return EmailValidationResponse(isValid=is_valid)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error validating email: {str(e)}")
 
 @app.post("/api/evaluate")
 async def evaluate_endpoint(request: EvaluationRequest):
