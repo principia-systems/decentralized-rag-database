@@ -24,7 +24,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "https://coophive-wine.vercel.app"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
@@ -55,6 +55,7 @@ class IngestGDriveResponse(BaseModel):
     downloaded_files: List[str]
     total_files: int
     processing_combinations: List[str]
+    database_created: bool
 
 class EmbedRequest(BaseModel):
     user_email: str
@@ -67,6 +68,7 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
     This endpoint scrapes all PDFs from a public Google Drive folder
     and downloads them to a user-specific papers directory.
     It also creates a Cartesian product of all converter, chunker, and embedder combinations.
+    After processing, it automatically creates the user database.
     """
     try:
         print(f"[HEAVY] Processing Google Drive ingestion for user: {request.user_email}")
@@ -140,7 +142,8 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
                 message="No PDF files found or downloaded from the Google Drive folder",
                 downloaded_files=[],
                 total_files=0,
-                processing_combinations=combination_strings
+                processing_combinations=combination_strings,
+                database_created=False
             )
         
         print(f"[HEAVY] Downloaded {len(downloaded_files)} files, starting processing...")
@@ -159,7 +162,6 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
                     user_email=request.user_email
                 )
                 
-                # Create user database after processing
             except Exception as e:
                 # Log the error but continue with other combinations
                 print(f"[HEAVY] Error processing combination {converter}_{chunker}_{embedder}: {str(e)}")
@@ -182,35 +184,30 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
             print(f"[HEAVY] Error during PDF cleanup: {str(cleanup_error)}")
             # Don't fail the entire request if cleanup fails
 
+        # Automatically create user database after processing completes
+        database_created = False
+        try:
+            print(f"[HEAVY] Creating database for user: {request.user_email}")
+            create_user_database(request.user_email)
+            database_created = True
+            print(f"[HEAVY] Successfully created database for user: {request.user_email}")
+        except Exception as db_error:
+            print(f"[HEAVY] Error creating user database: {str(db_error)}")
+            # Don't fail the entire request if database creation fails, but log it
+
         return IngestGDriveResponse(
             success=True,
-            message=f"Successfully processed {len(downloaded_files)} PDF files with {len(processing_combinations)} combinations and cleaned up papers/ directory.",
+            message=f"Successfully processed {len(downloaded_files)} PDF files with {len(processing_combinations)} combinations, cleaned up papers/ directory, and {'created' if database_created else 'failed to create'} user database.",
             downloaded_files=downloaded_files,
             total_files=len(downloaded_files),
-            processing_combinations=combination_strings
+            processing_combinations=combination_strings,
+            database_created=database_created
         )
         
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error ingesting PDFs: {str(e)}")
-
-@app.post("/api/embed")
-async def embed_endpoint(request: EmbedRequest):
-    """Endpoint to create user database - resource intensive"""
-    try:
-        print(f"[HEAVY] Creating database for user: {request.user_email}")
-        
-        # Create user database
-        create_user_database(request.user_email)
-        
-        return {
-            "success": True,
-            "message": f"Successfully created database for user: {request.user_email}",
-            "user_email": request.user_email
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating user database: {str(e)}")
 
 @app.get("/health")
 async def health_check():

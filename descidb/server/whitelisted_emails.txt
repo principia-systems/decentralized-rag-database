@@ -1,3 +1,0 @@
-# Whitelisted emails for DeSciDB access
-# One email per line
-# Format: email@domain.com
