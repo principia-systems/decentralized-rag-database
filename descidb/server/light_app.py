@@ -1,13 +1,24 @@
 # Light FastAPI server for quick endpoints (evaluation, status)
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 import json
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
+import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import os
 
 # Import your entry points
 from descidb.query.evaluation_agent import EvaluationAgent
+from descidb.scraper.openalex_scraper import OpenAlexScraper
+from descidb.scraper.config import ScraperConfig
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Setup FastAPI app
 app = FastAPI(
@@ -27,6 +38,15 @@ app.add_middleware(
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 WHITELIST_PATH = Path(__file__).parent / "whitelisted_emails.txt"
+
+def cleanup_zip_file(zip_path: str):
+    """Background task to clean up zip file after serving."""
+    try:
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+            logger.info(f"Cleaned up zip file: {zip_path}")
+    except Exception as e:
+        logger.warning(f"Error cleaning up zip file {zip_path}: {e}")
 
 # Define request/response models
 class EvaluationRequest(BaseModel):
@@ -50,13 +70,16 @@ class EmailValidationRequest(BaseModel):
 class EmailValidationResponse(BaseModel):
     isValid: bool
 
+class ResearchScrapeRequest(BaseModel):
+    research_area: str
+    user_email: str
+
 def load_whitelisted_emails() -> set:
     """Load whitelisted emails from the file"""
     if not WHITELIST_PATH.exists():
         return set()
     
     with open(WHITELIST_PATH, 'r') as f:
-        # Skip comments and empty lines, strip whitespace
         emails = {line.strip() for line in f 
                  if line.strip() and not line.startswith('#')}
     return emails
@@ -74,6 +97,65 @@ async def validate_email(request: EmailValidationRequest):
         return EmailValidationResponse(isValid=is_valid)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error validating email: {str(e)}")
+
+@app.post("/api/research/scrape")
+async def scrape_research_papers(request: ResearchScrapeRequest, background_tasks: BackgroundTasks):
+    """Scrape research papers from OpenAlex and return zip file"""
+    try:
+        logger.info(f"[SCRAPE] Starting research scrape for: {request.research_area}")
+        logger.info(f"[SCRAPE] User email: {request.user_email}")
+        
+        # Validate research area
+        if not request.research_area.strip():
+            raise HTTPException(status_code=400, detail="Research area cannot be empty")
+        
+        # Create scraper configuration
+        config = ScraperConfig.from_research_area(
+            research_area=request.research_area.strip(),
+            user_email=request.user_email
+        )
+        
+        # Create scraper instance
+        scraper = OpenAlexScraper(config)
+        
+        # Run scraping in a thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            success, result_message, downloaded_files, zip_path = await loop.run_in_executor(
+                executor, scraper.scrape_and_create_zip, True  # cleanup_pdfs=True
+            )
+        
+        if success and zip_path:
+            logger.info(f"[SCRAPE] Successfully completed for {request.user_email}")
+            logger.info(f"[SCRAPE] Returning zip file: {zip_path}")
+            
+            # Schedule cleanup of the zip file after response is sent
+            background_tasks.add_task(cleanup_zip_file, zip_path)
+            
+            # Get a clean filename for the download
+            safe_topic = "".join(c for c in request.research_area[:30] if c.isalnum() or c in (' ', '-', '_')).strip()
+            download_filename = f"research_papers_{safe_topic}.zip"
+            
+            return FileResponse(
+                path=zip_path,
+                filename=download_filename,
+                media_type='application/zip',
+                headers={
+                    "Content-Disposition": f"attachment; filename={download_filename}",
+                    "X-Papers-Count": str(len(downloaded_files)),
+                    "X-Research-Area": request.research_area[:100]
+                }
+            )
+        else:
+            logger.error(f"[SCRAPE] Failed for {request.user_email}: {result_message}")
+            raise HTTPException(status_code=404, detail=result_message)
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = f"Error scraping research papers: {str(e)}"
+        logger.error(f"[SCRAPE] {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
 
 @app.post("/api/evaluate")
 async def evaluate_endpoint(request: EvaluationRequest):
@@ -134,7 +216,7 @@ async def get_user_status(user_email: str):
             with open(mappings_file_path, 'r') as f:
                 mappings = json.load(f)
                 # Count total database combinations processed across all PDFs
-                for pdf_cid, db_combinations in mappings.items():
+                for _, db_combinations in mappings.items():
                     completed_jobs += len(db_combinations)
         
         # Calculate completion percentage
