@@ -43,8 +43,8 @@ class IngestGDriveRequest(BaseModel):
         description="List of converters to use (marker, openai, markitdown)"
     )
     chunkers: Optional[List[str]] = Field(
-        default=["paragraph"], 
-        description="List of chunkers to use (paragraph, sentence, word, fixed_length)"
+        default=["recursive"], 
+        description="List of chunkers to use (fixed_length, recursive, markdown_aware, semantic_split)"
     )
     embedders: Optional[List[str]] = Field(
         default=["bge"], 
@@ -86,7 +86,7 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         
         # Validate component lists
         valid_converters = ["marker", "openai", "markitdown"]
-        valid_chunkers = ["paragraph", "sentence", "word", "fixed_length"]
+        valid_chunkers = ["fixed_length", "recursive", "markdown_aware", "semantic_split"]
         valid_embedders = ["openai", "nvidia", "bge"]
         
         # Validate requested components
@@ -96,13 +96,15 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
                     status_code=400,
                     detail=f"Invalid converter '{converter}'. Valid options: {valid_converters}"
                 )
-        
+        print(f"[HEAVY] Valid chunkers: {valid_chunkers}")
         for chunker in request.chunkers:
             if chunker not in valid_chunkers:
+                print(f"[HEAVY] Invalid chunker: {chunker}")
                 raise HTTPException(
                     status_code=400,
                     detail=f"Invalid chunker '{chunker}'. Valid options: {valid_chunkers}"
                 )
+        print(f"[HEAVY] Valid chunkers: {valid_chunkers}")
         
         for embedder in request.embedders:
             if embedder not in valid_embedders:
@@ -206,13 +208,8 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
             # Use async lock to prevent concurrent database creation conflicts
             async with _db_creation_lock:
                 print(f"[HEAVY] Acquired lock for database creation: {request.user_email}")
-                # Run database creation in thread pool to avoid blocking
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(
-                    None,  # Use default thread pool for I/O operations
-                    create_user_database,
-                    request.user_email
-                )
+                # Run database creation directly in async context to avoid SQLite threading issues
+                create_user_database(request.user_email)
             database_created = True
             print(f"[HEAVY] Successfully created database for user: {request.user_email}")
         except Exception as db_error:

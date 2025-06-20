@@ -97,7 +97,6 @@ Configurable at [`config/processor.yml`](config/processor.yml):
 
 ```yaml
 converter: marker # Options: marker, openai, custom
-chunker: paragraph # Options: paragraph, sentence, fixed_length, custom
 embedder: openai # Options: openai, nvidia, custom
 ```
 
