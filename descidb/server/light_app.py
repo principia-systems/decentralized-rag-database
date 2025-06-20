@@ -20,6 +20,9 @@ from descidb.scraper.config import ScraperConfig
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Create a thread pool executor for CPU-intensive tasks
+_thread_pool = ThreadPoolExecutor(max_workers=2)
+
 # Setup FastAPI app
 app = FastAPI(
     title="DeSciDB Light API",
@@ -38,6 +41,16 @@ app.add_middleware(
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 WHITELIST_PATH = Path(__file__).parent / "whitelisted_emails.txt"
+
+def _scrape_papers_sync(scraper, cleanup_pdfs):
+    """
+    Synchronous helper function to scrape papers.
+    This runs in a separate thread to avoid blocking the event loop.
+    """
+    try:
+        return scraper.scrape_and_create_zip(cleanup_pdfs)
+    except Exception as e:
+        return False, str(e), [], None
 
 def cleanup_zip_file(zip_path: str):
     """Background task to clean up zip file after serving."""
@@ -118,12 +131,14 @@ async def scrape_research_papers(request: ResearchScrapeRequest, background_task
         # Create scraper instance
         scraper = OpenAlexScraper(config)
         
-        # Run scraping in a thread pool to avoid blocking
+        # Run scraping in the shared thread pool to avoid blocking
         loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor() as executor:
-            success, result_message, downloaded_files, zip_path = await loop.run_in_executor(
-                executor, scraper.scrape_and_create_zip, True  # cleanup_pdfs=True
-            )
+        success, result_message, downloaded_files, zip_path = await loop.run_in_executor(
+            _thread_pool,
+            _scrape_papers_sync,
+            scraper,
+            True  # cleanup_pdfs=True
+        )
         
         if success and zip_path:
             logger.info(f"[SCRAPE] Successfully completed for {request.user_email}")

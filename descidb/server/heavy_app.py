@@ -32,6 +32,9 @@ app.add_middleware(
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
+# Global lock for database creation to prevent concurrent write conflicts
+_db_creation_lock = asyncio.Lock()
+
 # Define request/response models
 class IngestGDriveRequest(BaseModel):
     drive_url: str = Field(..., description="Public Google Drive folder URL")
@@ -149,11 +152,11 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         print(f"[HEAVY] Downloaded {len(downloaded_files)} files, starting processing...")
         
         # Process each combination
+        processing_tasks = []
         for converter, chunker, embedder in processing_combinations:
-            try:
-                print(f"[HEAVY] Processing combination: {converter}_{chunker}_{embedder}")
-                # Call the processor for this specific combination with user-specific db path
-                await process_combination(
+            print(f"[HEAVY] Creating task for combination: {converter}_{chunker}_{embedder}")
+            task = asyncio.create_task(
+                process_combination(
                     converter=converter,
                     chunker=chunker,
                     embedder=embedder,
@@ -161,10 +164,22 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
                     user_papers_dir=user_papers_dir,
                     user_email=request.user_email
                 )
-                
-            except Exception as e:
-                # Log the error but continue with other combinations
-                print(f"[HEAVY] Error processing combination {converter}_{chunker}_{embedder}: {str(e)}")
+            )
+            processing_tasks.append(task)
+        
+        # Wait for all processing tasks to complete concurrently
+        print(f"[HEAVY] Running {len(processing_tasks)} combinations concurrently...")
+        results = await asyncio.gather(*processing_tasks, return_exceptions=True)
+        
+        # Log any errors from the concurrent processing
+        for i, result in enumerate(results):
+            converter, chunker, embedder = processing_combinations[i]
+            if isinstance(result, Exception):
+                print(f"[HEAVY] Error processing combination {converter}_{chunker}_{embedder}: {str(result)}")
+            else:
+                print(f"[HEAVY] Successfully completed combination {converter}_{chunker}_{embedder}")
+        
+        print(f"[HEAVY] All processing combinations completed")
         
         # Clean up: Delete all PDFs from user's papers directory after processing
         try:
@@ -188,7 +203,16 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         database_created = False
         try:
             print(f"[HEAVY] Creating database for user: {request.user_email}")
-            create_user_database(request.user_email)
+            # Use async lock to prevent concurrent database creation conflicts
+            async with _db_creation_lock:
+                print(f"[HEAVY] Acquired lock for database creation: {request.user_email}")
+                # Run database creation in thread pool to avoid blocking
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None,  # Use default thread pool for I/O operations
+                    create_user_database,
+                    request.user_email
+                )
             database_created = True
             print(f"[HEAVY] Successfully created database for user: {request.user_email}")
         except Exception as db_error:

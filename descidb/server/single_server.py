@@ -1,7 +1,7 @@
 # Create new file: descidb/server/single_server.py
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
+from typing import List, Optional
 import json
 import os
 import sys
@@ -214,6 +214,7 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         for converter, chunker, embedder in processing_combinations:
             try:
                 # Call the processor for this specific combination with user-specific db path
+                
                 await process_combination(
                     converter=converter,
                     chunker=chunker,
