@@ -41,7 +41,7 @@ class EvaluationRequest(BaseModel):
     query: str
     collections: Optional[List[str]] = None  # If None, auto-discovers collections
     db_path: Optional[str] = None
-    model_name: str = "openai/gpt-3.5-turbo"
+    model_name: str = "openai/gpt-4o-mini"
     user_email: str
 
 class IngestGDriveRequest(BaseModel):

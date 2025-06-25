@@ -66,7 +66,7 @@ class EvaluationRequest(BaseModel):
     query: str
     collections: Optional[List[str]] = None  # If None, auto-discovers collections
     db_path: Optional[str] = None
-    model_name: str = "openai/gpt-3.5-turbo"
+    model_name: str = "openai/gpt-4o-mini"
     user_email: str
 
 class UserStatusResponse(BaseModel):
@@ -211,46 +211,18 @@ async def evaluate_endpoint(request: EvaluationRequest):
 @app.get("/api/status")
 async def get_user_status(user_email: str):
     """Get processing status for a specific user - fast status check"""
+    jobs_file = PROJECT_ROOT / "temp" / "jobs.json"
     try:
-        print(f"[LIGHT] Getting status for user: {user_email}")
-        
-        # Construct user-specific paths
-        papers_directory = PROJECT_ROOT / "papers" / user_email
-        mappings_file_path = PROJECT_ROOT / "temp" / user_email / "mappings.json"
-        
-        # Count papers in user's papers directory
-        total_papers = 0
-        if papers_directory.exists():
-            # Count PDF files in the directory
-            pdf_files = list(papers_directory.glob("*.pdf"))
-            total_papers = len(pdf_files)
-        
-        # Count completed jobs from mappings file
-        completed_jobs = 0
-        if mappings_file_path.exists():
-            with open(mappings_file_path, 'r') as f:
-                mappings = json.load(f)
-                # Count total database combinations processed across all PDFs
-                for _, db_combinations in mappings.items():
-                    completed_jobs += len(db_combinations)
-        
-        # Calculate completion percentage
-        if total_papers == 0:
-            completion_percentage = 0.0
-        else:
-            completion_percentage = (completed_jobs / total_papers) * 100.0
-        
-        return UserStatusResponse(
-            user_email=user_email,
-            total_papers=total_papers,
-            completed_jobs=completed_jobs,
-            completion_percentage=round(completion_percentage, 2),
-            papers_directory=str(papers_directory),
-            mappings_file_path=str(mappings_file_path)
-        )
-        
+        with open(jobs_file, 'r') as f:
+            jobs = json.load(f)
+        total_jobs, completed_jobs = jobs.get(user_email, [0, 0])
+        return {
+            "total_jobs": total_jobs,
+            "completed_jobs": completed_jobs,
+            "completion_percentage": (completed_jobs / total_jobs) * 100
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting user status: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def health_check():

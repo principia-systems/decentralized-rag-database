@@ -9,6 +9,7 @@ import hashlib
 import os
 import subprocess
 import asyncio
+import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List
@@ -246,6 +247,7 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
             
             if success:
                 logger.info(f"Successfully processed {paper_filename} with {converter}_{chunker}_{embedder}")
+                increment_job_progress(user_email)
             else:
                 logger.error(f"Error processing {paper_filename} with {converter}_{chunker}_{embedder}: {error}")
         except Exception as e:
@@ -253,6 +255,28 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
 
         # Small async sleep to yield control back to the event loop
         await asyncio.sleep(0.1)
+
+
+def increment_job_progress(user_email):
+    """Increment completed job count for user"""
+    jobs_file = PROJECT_ROOT / "temp" / "jobs.json"
+    try:
+        if jobs_file.exists():
+            with open(jobs_file, 'r') as f:
+                jobs = json.load(f)
+            
+            if user_email in jobs:
+                if isinstance(jobs[user_email], list) and len(jobs[user_email]) >= 2:
+                    jobs[user_email][1] += 1
+                    
+                    with open(jobs_file, 'w') as f:
+                        json.dump(jobs, f, indent=2)
+                else:
+                    print(f"[PROCESSOR] Invalid job structure for {user_email}")
+            else:
+                print(f"[PROCESSOR] No job found for {user_email}")
+    except Exception as e:
+        print(f"[PROCESSOR] Error updating job progress: {e}")
 
 
 if __name__ == "__main__":
