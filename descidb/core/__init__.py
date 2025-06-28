@@ -9,9 +9,9 @@ from descidb.core.chunker import (
     chunk,
     chunk_from_url,
     fixed_length,
-    paragraph,
-    sentence,
-    word,
+    recursive_character,
+    markdown_aware,
+    semantic_split,
 )
 from descidb.core.converter import convert, convert_from_url
 from descidb.core.embedder import embed, embed_from_url, openai

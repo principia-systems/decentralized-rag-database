@@ -8,7 +8,9 @@ PDF processing, conversion, chunking, embedding, and storage in various database
 import hashlib
 import os
 import subprocess
-import time
+import asyncio
+import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List
 
@@ -16,8 +18,6 @@ import yaml
 from dotenv import load_dotenv
 
 from descidb.core.processor import Processor
-from descidb.db.chroma_client import VectorDatabaseManager
-from descidb.rewards.token_rewarder import TokenRewarder
 from descidb.utils.logging_utils import get_logger
 
 # Get module logger
@@ -29,6 +29,9 @@ load_dotenv(override=True)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 # Parent directory of the project (coophive folder)
 COOPHIVE_DIR = PROJECT_ROOT.parent
+
+# Create a thread pool executor for CPU-intensive tasks
+_thread_pool = ThreadPoolExecutor(max_workers=2)
 
 
 def load_config():
@@ -121,8 +124,6 @@ def test_processor():
 
             processor.process(pdf_path=paper, databases=databases, git_path=str(paper_dir))
 
-            time.sleep(5)
-
         # Clean up: Delete all PDF files after processing
         logger.info("Starting cleanup: Deleting processed PDF files...")
         deleted_files = []
@@ -141,6 +142,18 @@ def test_processor():
     except Exception as e:
         logger.error(f"Error in test_processor: {e}")
         raise
+
+
+def _process_single_paper_sync(processor, paper_path, databases, paper_dir):
+    """
+    Synchronous helper function to process a single paper.
+    This runs in a separate thread to avoid blocking the event loop.
+    """
+    try:
+        processor.process(pdf_path=str(paper_path), databases=databases, git_path=str(paper_dir))
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 
 async def process_combination(converter: str, chunker: str, embedder: str, papers_list: List[str], user_papers_dir: str, user_email: str):
@@ -221,12 +234,49 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
             continue
 
         try:
-            processor.process(pdf_path=str(paper_path), databases=databases, git_path=str(paper_dir))
-            logger.info(f"Successfully processed {paper_filename} with {converter}_{chunker}_{embedder}")
+            # Run the CPU-intensive processing in a separate thread
+            loop = asyncio.get_event_loop()
+            success, error = await loop.run_in_executor(
+                _thread_pool,
+                _process_single_paper_sync,
+                processor,
+                paper_path,
+                databases,
+                str(paper_dir)
+            )
+            
+            if success:
+                logger.info(f"Successfully processed {paper_filename} with {converter}_{chunker}_{embedder}")
+                increment_job_progress(user_email)
+            else:
+                logger.error(f"Error processing {paper_filename} with {converter}_{chunker}_{embedder}: {error}")
         except Exception as e:
             logger.error(f"Error processing {paper_filename} with {converter}_{chunker}_{embedder}: {e}")
 
-        time.sleep(5)
+        # Small async sleep to yield control back to the event loop
+        await asyncio.sleep(0.1)
+
+
+def increment_job_progress(user_email):
+    """Increment completed job count for user"""
+    jobs_file = PROJECT_ROOT / "temp" / "jobs.json"
+    try:
+        if jobs_file.exists():
+            with open(jobs_file, 'r') as f:
+                jobs = json.load(f)
+            
+            if user_email in jobs:
+                if isinstance(jobs[user_email], list) and len(jobs[user_email]) >= 2:
+                    jobs[user_email][1] += 1
+                    
+                    with open(jobs_file, 'w') as f:
+                        json.dump(jobs, f, indent=2)
+                else:
+                    print(f"[PROCESSOR] Invalid job structure for {user_email}")
+            else:
+                print(f"[PROCESSOR] No job found for {user_email}")
+    except Exception as e:
+        print(f"[PROCESSOR] Error updating job progress: {e}")
 
 
 if __name__ == "__main__":

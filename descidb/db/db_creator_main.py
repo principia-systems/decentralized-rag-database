@@ -45,6 +45,29 @@ def load_config():
         raise
 
 
+def increment_job_progress(user_email, increment=1):
+    """Increment completed job count for user"""
+    jobs_file = PROJECT_ROOT / "temp" / "jobs.json"
+    try:
+        if jobs_file.exists():
+            with open(jobs_file, 'r') as f:
+                jobs = json.load(f)
+            
+            if user_email in jobs:
+                if isinstance(jobs[user_email], list) and len(jobs[user_email]) >= 2:
+                    jobs[user_email][1] += increment
+                    
+                    with open(jobs_file, 'w') as f:
+                        json.dump(jobs, f, indent=2)
+                    print(f"[DB_CREATOR] Incremented job progress for {user_email}: {jobs[user_email][1]}/{jobs[user_email][0]}")
+                else:
+                    print(f"[DB_CREATOR] Invalid job structure for {user_email}")
+            else:
+                print(f"[DB_CREATOR] No job found for {user_email}")
+    except Exception as e:
+        print(f"[DB_CREATOR] Error updating job progress: {e}")
+
+
 def create_user_database(user_email: str):
     """
     Create and populate the database from IPFS CIDs for a specific user.
@@ -112,6 +135,7 @@ def create_user_database(user_email: str):
         else:
             # CID exists, check which combinations are missing
             existing_combinations = set(mapping_embed[pdf_cid])
+            increment_job_progress(user_email, len(existing_combinations))
             new_combinations = [combo for combo in db_combinations if combo not in existing_combinations]
             if new_combinations:
                 items_to_process[pdf_cid] = new_combinations
@@ -176,6 +200,7 @@ def create_user_database(user_email: str):
                 create_db.process_paths(pdf_cid, relationship_path, db_combination)
                 successfully_processed[pdf_cid].append(db_combination)
                 total_processed += 1
+                increment_job_progress(user_email, 1)
             except Exception as e:
                 logger.error(f"Error processing {pdf_cid} with {db_combination}: {e}")
                 continue

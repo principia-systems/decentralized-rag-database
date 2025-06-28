@@ -33,7 +33,7 @@ class EvaluationAgent:
     3. Evaluate and rank results using LLM agents via OpenRouter
     """
 
-    def __init__(self, model_name: str = "openai/gpt-3.5-turbo"):
+    def __init__(self, model_name: str = "openai/gpt-4o-mini"):
         """
         Initialize the evaluation agent.
 

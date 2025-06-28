@@ -1,7 +1,7 @@
 # Create new file: descidb/server/single_server.py
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
+from typing import List, Optional
 import json
 import os
 import sys
@@ -41,7 +41,7 @@ class EvaluationRequest(BaseModel):
     query: str
     collections: Optional[List[str]] = None  # If None, auto-discovers collections
     db_path: Optional[str] = None
-    model_name: str = "openai/gpt-3.5-turbo"
+    model_name: str = "openai/gpt-4o-mini"
     user_email: str
 
 class IngestGDriveRequest(BaseModel):
@@ -51,8 +51,8 @@ class IngestGDriveRequest(BaseModel):
         description="List of converters to use (marker, openai, markitdown)"
     )
     chunkers: Optional[List[str]] = Field(
-        default=["paragraph"], 
-        description="List of chunkers to use (paragraph, sentence, word, fixed_length)"
+        default=["recursive"], 
+        description="List of chunkers to use (fixed_length, recursive, markdown_aware, semantic_split)"
     )
     embedders: Optional[List[str]] = Field(
         default=["bge"], 
@@ -150,7 +150,7 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         
         # Validate component lists
         valid_converters = ["marker", "openai", "markitdown"]
-        valid_chunkers = ["paragraph", "sentence", "word", "fixed_length"]
+        valid_chunkers = ["fixed_length", "recursive", "markdown_aware", "semantic_split"]
         valid_embedders = ["openai", "nvidia", "bge"]
         
         # Validate requested components
@@ -214,6 +214,7 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         for converter, chunker, embedder in processing_combinations:
             try:
                 # Call the processor for this specific combination with user-specific db path
+                
                 await process_combination(
                     converter=converter,
                     chunker=chunker,
