@@ -1,10 +1,10 @@
 [tool.poetry]
-name = "descidb"
+name = "src"
 version = "0.1.0"
 description = "A database management system for document processing and embedding"
 authors = ["Vardhan Shorewala <vardhanshorewala@coophive.com>"]
 readme = "README.md"
-packages = [{include = "descidb"}]
+packages = [{include = "src"}]
 license = "MIT"
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -55,14 +55,14 @@ requires = ["poetry-core>=1.0.0,<2.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-descidb = "descidb.main:main"
+src = "src.main:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-addopts = "--cov=descidb --cov-report=xml --cov-report=term"
+addopts = "--cov=src --cov-report=xml --cov-report=term"
 
 [tool.black]
 line-length = 88
@@ -82,7 +82,7 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
 [tool.coverage.run]
-source = ["descidb"]
+source = ["src"]
 omit = ["tests/*", "**/__init__.py"]
 
 [tool.coverage.report]

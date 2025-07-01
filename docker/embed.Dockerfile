@@ -13,4 +13,4 @@ RUN apt-get update && apt-get install -y \
 
 RUN uv pip install --no-cache-dir "git+https://github.com/CoopHive/markdown-converter.git@main" --system
 
-ENTRYPOINT ["python3", "-c", "import sys; from descidb.embedder import embed_from_url; print(embed_from_url(*sys.argv[1:]))"]
+ENTRYPOINT ["python3", "-c", "import sys; from src.embedder import embed_from_url; print(embed_from_url(*sys.argv[1:]))"]

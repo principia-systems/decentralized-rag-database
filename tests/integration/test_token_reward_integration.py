@@ -75,9 +75,9 @@ class TestTokenRewardIntegration:
         }
         return env_values.get(key, default)
 
-    @patch("descidb.rewards.token_reward_main.load_config")
-    @patch("descidb.rewards.token_reward_main.IPFSNeo4jGraph")
-    @patch("descidb.rewards.token_reward_main.TokenRewarder")
+    @patch("src.rewards.token_reward_main.load_config")
+    @patch("src.rewards.token_reward_main.IPFSNeo4jGraph")
+    @patch("src.rewards.token_reward_main.TokenRewarder")
     def test_token_reward_workflow(
         self,
         mock_token_rewarder_class,
@@ -112,7 +112,7 @@ class TestTokenRewardIntegration:
             "os.getenv", side_effect=self.mock_getenv
         ):
             # Import and run the main function
-            from descidb.rewards.token_reward_main import run_reward_users
+            from src.rewards.token_reward_main import run_reward_users
 
             run_reward_users()
 

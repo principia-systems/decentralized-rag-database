@@ -7,13 +7,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from descidb.core.embedder import embed, embed_from_url, openai
+from src.core.embedder import embed, embed_from_url, openai
 
 
 class TestEmbedder:
     """Test cases for embedder functions."""
 
-    @patch("descidb.core.embedder.OpenAI")
+    @patch("src.core.embedder.OpenAI")
     def test_openai_embedder(self, mock_openai):
         """Test the OpenAI embedder function."""
         # Mock OpenAI client and response
@@ -39,7 +39,7 @@ class TestEmbedder:
         )
         assert result == mock_embedding
 
-    @patch("descidb.core.embedder.openai")
+    @patch("src.core.embedder.openai")
     def test_embed_with_openai(self, mock_openai_func):
         """Test the embed function with OpenAI embedder."""
         # Mock openai function
@@ -58,8 +58,8 @@ class TestEmbedder:
         with pytest.raises(KeyError):
             embed("invalid_embedder", "Test text")
 
-    @patch("descidb.core.embedder.embed")
-    @patch("descidb.core.embedder.download_from_url")
+    @patch("src.core.embedder.embed")
+    @patch("src.core.embedder.download_from_url")
     def test_embed_from_url(self, mock_download, mock_embed):
         """Test the embed_from_url function."""
         # Mock download
@@ -86,7 +86,7 @@ class TestEmbedder:
         )
         assert result == expected_embedding
 
-    @patch("descidb.core.embedder.OpenAI")
+    @patch("src.core.embedder.OpenAI")
     def test_openai_embedder_with_environment_variable(self, mock_openai):
         """Test the OpenAI embedder function with API key from environment."""
         # Store the original environment variable

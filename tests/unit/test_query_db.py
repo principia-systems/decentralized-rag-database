@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from descidb.query.query_db import query_collection
+from src.query.query_db import query_collection
 
 
 class TestQueryDB:
@@ -49,15 +49,15 @@ class TestQueryDB:
         self, mock_env_vars, mock_openai_response, mock_chroma_response
     ):
         """Test successful querying of a collection."""
-        with patch("descidb.query.query_db.OpenAI") as mock_openai_class:
+        with patch("src.query.query_db.OpenAI") as mock_openai_class:
             with patch(
-                "descidb.query.query_db.chromadb.PersistentClient"
+                "src.query.query_db.chromadb.PersistentClient"
             ) as mock_client:
                 with patch(
-                    "descidb.query.query_db.embedding_functions.OpenAIEmbeddingFunction"
+                    "src.query.query_db.embedding_functions.OpenAIEmbeddingFunction"
                 ):
-                    with patch("descidb.query.query_db.os.makedirs"):
-                        with patch("descidb.query.query_db.logger") as mock_logger:
+                    with patch("src.query.query_db.os.makedirs"):
+                        with patch("src.query.query_db.logger") as mock_logger:
                             # Configure OpenAI mock
                             mock_openai_instance = Mock()
                             mock_openai_class.return_value = mock_openai_instance
@@ -111,11 +111,11 @@ class TestQueryDB:
 
     def test_query_collection_no_api_key(self):
         """Test behavior when the OpenAI API key is not set."""
-        with patch("descidb.query.query_db.OpenAI"):
+        with patch("src.query.query_db.OpenAI"):
             with patch(
-                "descidb.query.query_db.os.getenv", return_value=None
+                "src.query.query_db.os.getenv", return_value=None
             ) as mock_getenv:
-                with patch("descidb.query.query_db.logger") as mock_logger:
+                with patch("src.query.query_db.logger") as mock_logger:
                     # Call the function
                     result = query_collection("test_collection", "test query")
 
@@ -143,15 +143,15 @@ class TestQueryDB:
             "distances": [[]],
         }
 
-        with patch("descidb.query.query_db.OpenAI") as mock_openai:
+        with patch("src.query.query_db.OpenAI") as mock_openai:
             with patch(
-                "descidb.query.query_db.chromadb.PersistentClient"
+                "src.query.query_db.chromadb.PersistentClient"
             ) as mock_client:
                 with patch(
-                    "descidb.query.query_db.embedding_functions.OpenAIEmbeddingFunction"
+                    "src.query.query_db.embedding_functions.OpenAIEmbeddingFunction"
                 ):
-                    with patch("descidb.query.query_db.os.makedirs"):
-                        with patch("descidb.query.query_db.logger") as mock_logger:
+                    with patch("src.query.query_db.os.makedirs"):
+                        with patch("src.query.query_db.logger") as mock_logger:
                             # Configure OpenAI mock
                             mock_openai_instance = Mock()
                             mock_openai.return_value = mock_openai_instance
@@ -188,15 +188,15 @@ class TestQueryDB:
         self, mock_env_vars, mock_openai_response, mock_chroma_response
     ):
         """Test using a custom DB path."""
-        with patch("descidb.query.query_db.OpenAI") as mock_openai_class:
+        with patch("src.query.query_db.OpenAI") as mock_openai_class:
             with patch(
-                "descidb.query.query_db.chromadb.PersistentClient"
+                "src.query.query_db.chromadb.PersistentClient"
             ) as mock_client:
                 with patch(
-                    "descidb.query.query_db.embedding_functions.OpenAIEmbeddingFunction"
+                    "src.query.query_db.embedding_functions.OpenAIEmbeddingFunction"
                 ):
-                    with patch("descidb.query.query_db.os.makedirs") as mock_makedirs:
-                        with patch("descidb.query.query_db.logger"):
+                    with patch("src.query.query_db.os.makedirs") as mock_makedirs:
+                        with patch("src.query.query_db.logger"):
                             # Configure OpenAI mock
                             mock_openai_instance = Mock()
                             mock_openai_class.return_value = mock_openai_instance
@@ -231,8 +231,8 @@ class TestQueryDB:
 
     def test_query_collection_exception(self, mock_env_vars):
         """Test handling of exceptions during query."""
-        with patch("descidb.query.query_db.OpenAI") as mock_openai_class:
-            with patch("descidb.query.query_db.logger") as mock_logger:
+        with patch("src.query.query_db.OpenAI") as mock_openai_class:
+            with patch("src.query.query_db.logger") as mock_logger:
                 # Configure OpenAI mock to raise an exception
                 mock_openai_class.side_effect = Exception("Test error")
 

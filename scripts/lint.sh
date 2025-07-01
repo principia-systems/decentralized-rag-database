@@ -4,13 +4,13 @@
 set -e
 
 echo "Running black formatter..."
-poetry run black descidb tests
+poetry run black src tests
 
 echo "Running isort..."
-poetry run isort descidb tests
+poetry run isort src tests
 
 echo "Running flake8..."
-poetry run flake8 descidb tests
+poetry run flake8 src tests
 
 echo "Running mypy..."
-poetry run mypy descidb 
+poetry run mypy src 

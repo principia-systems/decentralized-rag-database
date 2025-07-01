@@ -53,10 +53,10 @@ class TestDBCreatorIntegration:
         }
         return env_values.get(key, default)
 
-    @patch("descidb.db.db_creator_main.load_config")
-    @patch("descidb.db.db_creator_main.IPFSNeo4jGraph")
-    @patch("descidb.db.db_creator_main.VectorDatabaseManager")
-    @patch("descidb.db.db_creator_main.DatabaseCreator")
+    @patch("src.db.db_creator_main.load_config")
+    @patch("src.db.db_creator_main.IPFSNeo4jGraph")
+    @patch("src.db.db_creator_main.VectorDatabaseManager")
+    @patch("src.db.db_creator_main.DatabaseCreator")
     def test_db_creator_workflow(
         self,
         mock_creator,
@@ -103,7 +103,7 @@ class TestDBCreatorIntegration:
                     "os.path.exists", return_value=True
                 ):
                     # Import and run the main function
-                    from descidb.db.db_creator_main import main
+                    from src.db.db_creator_main import main
 
                     main()
 

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from descidb.core.converter import (
+from src.core.converter import (
     chunk_text,
     convert,
     convert_from_url,
@@ -43,8 +43,8 @@ class TestConverter:
         mock_pdf_reader.assert_called_once_with("test.pdf")
         assert result == "Page 1 contentPage 2 content"
 
-    @patch("descidb.core.converter.OpenAI")
-    @patch("descidb.core.converter.extract_text_from_pdf")
+    @patch("src.core.converter.OpenAI")
+    @patch("src.core.converter.extract_text_from_pdf")
     @patch("os.path.exists")
     def test_openai_converter(self, mock_exists, mock_extract, mock_openai):
         """Test the OpenAI converter function."""
@@ -85,7 +85,7 @@ class TestConverter:
         mock_exists.assert_called_once_with("nonexistent.pdf")
         assert result == ""
 
-    @patch("descidb.core.converter.openai")
+    @patch("src.core.converter.openai")
     def test_convert_openai(self, mock_openai):
         """Test the convert function with the OpenAI converter."""
         # Mock the OpenAI function
@@ -103,9 +103,9 @@ class TestConverter:
         with pytest.raises(KeyError):
             convert("invalid_converter", "test.pdf")
 
-    @patch("descidb.core.converter.convert")
-    @patch("descidb.core.converter.extract")
-    @patch("descidb.core.converter.download_from_url")
+    @patch("src.core.converter.convert")
+    @patch("src.core.converter.extract")
+    @patch("src.core.converter.download_from_url")
     def test_convert_from_url(self, mock_download, mock_extract, mock_convert):
         """Test the convert_from_url function with a tar file."""
         # Mock download return value

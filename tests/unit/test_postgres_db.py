@@ -1,10 +1,10 @@
-"""Tests for PostgreSQL database manager in DeSciDB."""
+"""Tests for PostgreSQL database manager in src."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from descidb.db.postgres_db import PostgresDBManager
+from src.db.postgres_db import PostgresDBManager
 
 
 class TestPostgresDBManager:
@@ -26,7 +26,7 @@ class TestPostgresDBManager:
 
     def test_init_with_provided_params(self):
         """Test initialization with provided parameters."""
-        with patch("descidb.postgres_db.psycopg2.connect") as mock_connect:
+        with patch("src.postgres_db.psycopg2.connect") as mock_connect:
             # Configure connect mock
             mock_conn = MagicMock()
             mock_connect.return_value = mock_conn
@@ -57,8 +57,8 @@ class TestPostgresDBManager:
 
     def test_init_with_env_vars(self, mock_env_vars):
         """Test initialization with environment variables."""
-        with patch("descidb.postgres_db.psycopg2.connect") as mock_connect:
-            with patch("descidb.postgres_db.os.getenv") as mock_getenv:
+        with patch("src.postgres_db.psycopg2.connect") as mock_connect:
+            with patch("src.postgres_db.os.getenv") as mock_getenv:
                 # Configure getenv mock
                 def getenv_side_effect(key, default=None):
                     return mock_env_vars.get(key, default)
@@ -90,7 +90,7 @@ class TestPostgresDBManager:
 
     def test_init_connection_failure(self):
         """Test handling of connection failure during initialization."""
-        with patch("descidb.postgres_db.psycopg2.connect") as mock_connect:
+        with patch("src.postgres_db.psycopg2.connect") as mock_connect:
             # Configure connect mock to raise an exception
             mock_connect.side_effect = Exception("Connection failed")
 
@@ -102,7 +102,7 @@ class TestPostgresDBManager:
 
     def test_connect_success(self):
         """Test successful database connection."""
-        with patch("descidb.postgres_db.psycopg2.connect") as mock_connect:
+        with patch("src.postgres_db.psycopg2.connect") as mock_connect:
             # Configure primary connection mock
             mock_primary_conn = MagicMock()
             mock_connect.return_value = mock_primary_conn
@@ -133,7 +133,7 @@ class TestPostgresDBManager:
 
     def test_connect_failure(self):
         """Test handling of connection failure in _connect method."""
-        with patch("descidb.postgres_db.psycopg2.connect") as mock_connect:
+        with patch("src.postgres_db.psycopg2.connect") as mock_connect:
             # Configure primary connection mock
             mock_primary_conn = MagicMock()
             mock_connect.return_value = mock_primary_conn
@@ -155,7 +155,7 @@ class TestPostgresDBManager:
 
     def test_create_databases(self):
         """Test creating multiple databases."""
-        with patch("descidb.postgres_db.psycopg2.connect") as mock_connect:
+        with patch("src.postgres_db.psycopg2.connect") as mock_connect:
             # Configure primary connection mock
             mock_primary_conn = MagicMock()
             mock_connect.return_value = mock_primary_conn
@@ -193,7 +193,7 @@ class TestPostgresDBManager:
 
     def test_create_schema_and_table_in_db(self):
         """Test creating schema and table in a database."""
-        with patch("descidb.postgres_db.psycopg2.connect") as mock_connect:
+        with patch("src.postgres_db.psycopg2.connect") as mock_connect:
             # Configure primary connection mock
             mock_primary_conn = MagicMock()
             mock_connect.return_value = mock_primary_conn
@@ -230,7 +230,7 @@ class TestPostgresDBManager:
 
     def test_insert_data(self):
         """Test inserting data into a database."""
-        with patch("descidb.postgres_db.psycopg2.connect") as mock_connect:
+        with patch("src.postgres_db.psycopg2.connect") as mock_connect:
             # Configure primary connection mock
             mock_primary_conn = MagicMock()
             mock_connect.return_value = mock_primary_conn
@@ -273,8 +273,8 @@ class TestPostgresDBManager:
                 assert mock_cursor.execute.call_count == 2  # One for each record
 
                 # Verify pickle.dumps was used for embedding
-                with patch("descidb.postgres_db.pickle.dumps") as mock_dumps:
-                    with patch("descidb.postgres_db.np.array") as mock_array:
+                with patch("src.postgres_db.pickle.dumps") as mock_dumps:
+                    with patch("src.postgres_db.np.array") as mock_array:
                         # Configure mocks
                         mock_dumps.return_value = b"binary_data"
                         mock_array.return_value = "numpy_array"
@@ -291,7 +291,7 @@ class TestPostgresDBManager:
 
     def test_query_select(self):
         """Test executing a SELECT query."""
-        with patch("descidb.postgres_db.psycopg2.connect") as mock_connect:
+        with patch("src.postgres_db.psycopg2.connect") as mock_connect:
             # Configure primary connection mock
             mock_primary_conn = MagicMock()
             mock_connect.return_value = mock_primary_conn
@@ -329,7 +329,7 @@ class TestPostgresDBManager:
 
     def test_query_non_select(self):
         """Test executing a non-SELECT query."""
-        with patch("descidb.postgres_db.psycopg2.connect") as mock_connect:
+        with patch("src.postgres_db.psycopg2.connect") as mock_connect:
             # Configure primary connection mock
             mock_primary_conn = MagicMock()
             mock_connect.return_value = mock_primary_conn
@@ -363,7 +363,7 @@ class TestPostgresDBManager:
 
     def test_query_exception(self):
         """Test handling exceptions during query execution."""
-        with patch("descidb.postgres_db.psycopg2.connect") as mock_connect:
+        with patch("src.postgres_db.psycopg2.connect") as mock_connect:
             # Configure primary connection mock
             mock_primary_conn = MagicMock()
             mock_connect.return_value = mock_primary_conn

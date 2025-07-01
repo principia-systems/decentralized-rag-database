@@ -1,3 +1,3 @@
 """
-Integration tests for the DeSciDB package.
+Integration tests for the src package.
 """

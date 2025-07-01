@@ -4,5 +4,5 @@
 
 set -e
 
-echo "Running DeSciDB token reward test..."
-poetry run python -m descidb.rewards.token_reward_main -v
+echo "Running src token reward test..."
+poetry run python -m src.rewards.token_reward_main -v
