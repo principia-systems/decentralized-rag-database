@@ -143,11 +143,11 @@ output_marker/
 tmp/
 **/__pycache__/
 **/.env
-/descidb/database
-/descidb/database_50
-/descidb/cids.txt
-/descidb/cids_50_papers.txt
-/descidb/tmp.txt
+/src/database
+/src/database_50
+/src/cids.txt
+/src/cids_50_papers.txt
+/src/tmp.txt
 /papers
 /erc20-token/cache
 /erc20-token/artifacts

@@ -1,6 +1,6 @@
 #!/bin/bash
 # start_heavy_server.sh
-# DESCRIPTION: Start the DeSciDB Heavy FastAPI server (processing, ingestion)
+# DESCRIPTION: Start  Heavy FastAPI server (processing, ingestion)
 set -e
 
 # Default configuration
@@ -13,7 +13,7 @@ LOG_LEVEL="info"
 # Help message
 function show_help {
     echo "Usage: start_heavy_server.sh [OPTIONS]"
-    echo "Start the DeSciDB Heavy FastAPI server (resource-intensive operations)"
+    echo "Start the Heavy FastAPI server (resource-intensive operations)"
     echo ""
     echo "Options:"
     echo "  -p, --port PORT          Port to run the server on (default: 5002)"
@@ -56,7 +56,7 @@ function stop_server {
     fi
     
     # Also kill any uvicorn processes related to heavy_app
-    pkill -f "descidb.server.heavy_app" 2>/dev/null || true
+    pkill -f "src.server.heavy_app" 2>/dev/null || true
     
     echo "Heavy server shutdown complete"
     exit 0
@@ -125,7 +125,7 @@ if lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
     exit 1
 fi
 
-echo "Starting DeSciDB Heavy server..."
+echo "Starting Heavy server..."
 echo "Server: $HOST:$PORT"
 echo "Environment: $ENV"
 echo "Workers: $WORKERS"
@@ -137,20 +137,20 @@ LOG_FILE="logs/heavy_server.log"
 
 if [ "$ENV" = "production" ]; then
     echo "Starting Heavy server in production mode with $WORKERS workers"
-    poetry run uvicorn descidb.server.heavy_app:app \
-        --host "$HOST" \
-        --port "$PORT" \
-        --workers "$WORKERS" \
-        --log-level "$LOG_LEVEL" \
+            poetry run uvicorn src.server.heavy_app:app \
+            --host "$HOST" \
+            --port "$PORT" \
+            --workers "$WORKERS" \
+            --log-level "$LOG_LEVEL" \
         --access-log \
         > "$LOG_FILE" 2>&1 &
 else
     echo "Starting Heavy server in development mode (single worker with reload)"
-    poetry run uvicorn descidb.server.heavy_app:app \
-        --host "$HOST" \
-        --port "$PORT" \
-        --reload \
-        --log-level "$LOG_LEVEL" \
+            poetry run uvicorn src.server.heavy_app:app \
+            --host "$HOST" \
+            --port "$PORT" \
+            --reload \
+            --log-level "$LOG_LEVEL" \
         > "$LOG_FILE" 2>&1 &
 fi
 

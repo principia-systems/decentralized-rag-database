@@ -81,9 +81,9 @@ class TestEvaluationIntegration:
 
         # Set up all patches
         with patch(
-            "descidb.query.evaluation_main.load_config", return_value=mock_config
+            "src.query.evaluation_main.load_config", return_value=mock_config
         ), patch(
-            "descidb.query.evaluation_main.EvaluationAgent"
+            "src.query.evaluation_main.EvaluationAgent"
         ) as mock_agent_class, patch(
             "os.makedirs"
         ) as mock_makedirs, patch(
@@ -105,7 +105,7 @@ class TestEvaluationIntegration:
             mock_open.return_value.__enter__.return_value = mock_file
 
             # Import and run the main function
-            from descidb.query.evaluation_main import main
+            from src.query.evaluation_main import main
 
             main()
 

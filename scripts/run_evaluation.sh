@@ -4,5 +4,5 @@
 
 set -e
 
-echo "Running DeSciDB evaluation agent..."
-poetry run python -m descidb.query.evaluation_main 
+echo "Running src evaluation agent..."
+poetry run python -m src.query.evaluation_main 

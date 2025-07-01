@@ -1,4 +1,4 @@
-"""Tests for the token_rewarder module in DeSciDB."""
+"""Tests for the token_rewarder module in src."""
 
 import itertools
 import json
@@ -6,7 +6,7 @@ from unittest.mock import Mock, call, patch
 
 import pytest
 
-from descidb.rewards.token_rewarder import TokenRewarder
+from src.rewards.token_rewarder import TokenRewarder
 
 
 class TestTokenRewarder:
@@ -39,12 +39,12 @@ class TestTokenRewarder:
 
     def test_init_with_defaults(self, mock_contract_abi):
         """Test initialization with default parameters."""
-        with patch("descidb.token_rewarder.Web3") as mock_web3:
+        with patch("src.token_rewarder.Web3") as mock_web3:
             with patch(
-                "descidb.token_rewarder.TokenRewarder.load_contract_abi",
+                "src.token_rewarder.TokenRewarder.load_contract_abi",
                 return_value=mock_contract_abi,
             ):
-                with patch("descidb.token_rewarder.os.getenv") as mock_getenv:
+                with patch("src.token_rewarder.os.getenv") as mock_getenv:
                     # Configure mocks
                     mock_web3_instance = Mock()
                     mock_web3.return_value = mock_web3_instance
@@ -68,9 +68,9 @@ class TestTokenRewarder:
 
     def test_initialize_network_valid(self):
         """Test network initialization with valid network types."""
-        with patch("descidb.token_rewarder.Web3"):
-            with patch("descidb.token_rewarder.TokenRewarder.load_contract_abi"):
-                with patch("descidb.token_rewarder.os.getenv"):
+        with patch("src.token_rewarder.Web3"):
+            with patch("src.token_rewarder.TokenRewarder.load_contract_abi"):
+                with patch("src.token_rewarder.os.getenv"):
                     # Test different networks
                     networks = {
                         "optimism": ("https://mainnet.optimism.io", 10),
@@ -85,9 +85,9 @@ class TestTokenRewarder:
 
     def test_initialize_network_invalid(self):
         """Test network initialization with invalid network type raises ValueError."""
-        with patch("descidb.token_rewarder.Web3"):
-            with patch("descidb.token_rewarder.TokenRewarder.load_contract_abi"):
-                with patch("descidb.token_rewarder.os.getenv"):
+        with patch("src.token_rewarder.Web3"):
+            with patch("src.token_rewarder.TokenRewarder.load_contract_abi"):
+                with patch("src.token_rewarder.os.getenv"):
                     with pytest.raises(ValueError) as excinfo:
                         TokenRewarder(network="invalid_network")
 
@@ -95,13 +95,13 @@ class TestTokenRewarder:
 
     def test_connect_success(self, mock_contract_abi):
         """Test successful database connection."""
-        with patch("descidb.token_rewarder.Web3"):
+        with patch("src.token_rewarder.Web3"):
             with patch(
-                "descidb.token_rewarder.TokenRewarder.load_contract_abi",
+                "src.token_rewarder.TokenRewarder.load_contract_abi",
                 return_value=mock_contract_abi,
             ):
-                with patch("descidb.token_rewarder.os.getenv"):
-                    with patch("descidb.token_rewarder.connect") as mock_connect:
+                with patch("src.token_rewarder.os.getenv"):
+                    with patch("src.token_rewarder.connect") as mock_connect:
                         # Configure mock connection
                         mock_conn = Mock()
                         mock_connect.return_value = mock_conn
@@ -128,13 +128,13 @@ class TestTokenRewarder:
 
     def test_connect_failure(self, mock_contract_abi):
         """Test failed database connection."""
-        with patch("descidb.token_rewarder.Web3"):
+        with patch("src.token_rewarder.Web3"):
             with patch(
-                "descidb.token_rewarder.TokenRewarder.load_contract_abi",
+                "src.token_rewarder.TokenRewarder.load_contract_abi",
                 return_value=mock_contract_abi,
             ):
-                with patch("descidb.token_rewarder.os.getenv"):
-                    with patch("descidb.token_rewarder.connect") as mock_connect:
+                with patch("src.token_rewarder.os.getenv"):
+                    with patch("src.token_rewarder.connect") as mock_connect:
                         # Configure mock connection to fail
                         mock_connect.side_effect = Exception("Connection failed")
 
@@ -149,8 +149,8 @@ class TestTokenRewarder:
 
     def test_load_contract_abi(self, tmp_path):
         """Test loading contract ABI from file."""
-        with patch("descidb.token_rewarder.Web3"):
-            with patch("descidb.token_rewarder.os.getenv"):
+        with patch("src.token_rewarder.Web3"):
+            with patch("src.token_rewarder.os.getenv"):
                 # Create a sample ABI file
                 sample_abi = {"abi": [{"type": "function", "name": "test"}]}
                 abi_file = tmp_path / "test_abi.json"
@@ -159,7 +159,7 @@ class TestTokenRewarder:
 
                 # Initialize TokenRewarder and test ABI loading
                 with patch(
-                    "descidb.token_rewarder.TokenRewarder.load_contract_abi",
+                    "src.token_rewarder.TokenRewarder.load_contract_abi",
                     return_value=sample_abi,
                 ):
                     rewarder = TokenRewarder()
@@ -173,11 +173,11 @@ class TestTokenRewarder:
 
     def test_generate_db_names(self, db_components):
         """Test generation of database names."""
-        with patch("descidb.token_rewarder.Web3"):
-            with patch("descidb.token_rewarder.TokenRewarder.load_contract_abi"):
-                with patch("descidb.token_rewarder.os.getenv"):
+        with patch("src.token_rewarder.Web3"):
+            with patch("src.token_rewarder.TokenRewarder.load_contract_abi"):
+                with patch("src.token_rewarder.os.getenv"):
                     with patch(
-                        "descidb.token_rewarder.TokenRewarder._initialize_reward_tables"
+                        "src.token_rewarder.TokenRewarder._initialize_reward_tables"
                     ):
                         # Initialize TokenRewarder and test database name generation
                         rewarder = TokenRewarder(db_components=db_components)
@@ -197,11 +197,11 @@ class TestTokenRewarder:
 
     def test_initialize_reward_tables(self, db_components):
         """Test initialization of reward tables."""
-        with patch("descidb.token_rewarder.Web3"):
-            with patch("descidb.token_rewarder.TokenRewarder.load_contract_abi"):
-                with patch("descidb.token_rewarder.os.getenv"):
+        with patch("src.token_rewarder.Web3"):
+            with patch("src.token_rewarder.TokenRewarder.load_contract_abi"):
+                with patch("src.token_rewarder.os.getenv"):
                     with patch(
-                        "descidb.token_rewarder.TokenRewarder._create_database_and_table"
+                        "src.token_rewarder.TokenRewarder._create_database_and_table"
                     ) as mock_create:
                         # Initialize TokenRewarder with components
                         rewarder = TokenRewarder(db_components=db_components)
@@ -216,12 +216,12 @@ class TestTokenRewarder:
 
     def test_create_database_and_table(self, mock_contract_abi):
         """Test creation of database and table."""
-        with patch("descidb.token_rewarder.Web3"):
+        with patch("src.token_rewarder.Web3"):
             with patch(
-                "descidb.token_rewarder.TokenRewarder.load_contract_abi",
+                "src.token_rewarder.TokenRewarder.load_contract_abi",
                 return_value=mock_contract_abi,
             ):
-                with patch("descidb.token_rewarder.os.getenv"):
+                with patch("src.token_rewarder.os.getenv"):
                     # Mock database connection and cursor
                     mock_conn = Mock()
                     mock_cursor = Mock()
@@ -260,12 +260,12 @@ class TestTokenRewarder:
 
     def test_create_schema_and_table(self, mock_contract_abi):
         """Test creation of schema and table."""
-        with patch("descidb.token_rewarder.Web3"):
+        with patch("src.token_rewarder.Web3"):
             with patch(
-                "descidb.token_rewarder.TokenRewarder.load_contract_abi",
+                "src.token_rewarder.TokenRewarder.load_contract_abi",
                 return_value=mock_contract_abi,
             ):
-                with patch("descidb.token_rewarder.os.getenv"):
+                with patch("src.token_rewarder.os.getenv"):
                     # Mock database connection and cursor
                     mock_conn = Mock()
                     mock_cursor = Mock()
@@ -297,12 +297,12 @@ class TestTokenRewarder:
 
     def test_add_reward_to_user(self, mock_contract_abi):
         """Test adding reward to a user."""
-        with patch("descidb.token_rewarder.Web3"):
+        with patch("src.token_rewarder.Web3"):
             with patch(
-                "descidb.token_rewarder.TokenRewarder.load_contract_abi",
+                "src.token_rewarder.TokenRewarder.load_contract_abi",
                 return_value=mock_contract_abi,
             ):
-                with patch("descidb.token_rewarder.os.getenv"):
+                with patch("src.token_rewarder.os.getenv"):
                     # Mock database connection and cursor
                     mock_conn = Mock()
                     mock_cursor = Mock()
@@ -339,9 +339,9 @@ class TestTokenRewarder:
 
     def test_issue_token(self, mock_contract_abi, mock_env_vars):
         """Test issuing a token to a recipient."""
-        with patch("descidb.token_rewarder.Web3") as mock_web3:
+        with patch("src.token_rewarder.Web3") as mock_web3:
             with patch(
-                "descidb.token_rewarder.TokenRewarder.load_contract_abi",
+                "src.token_rewarder.TokenRewarder.load_contract_abi",
                 return_value=mock_contract_abi,
             ):
                 # Mock web3 functionality
@@ -384,9 +384,9 @@ class TestTokenRewarder:
 
     def test_batch_issue_tokens(self, mock_contract_abi, mock_env_vars):
         """Test batch issuing tokens to multiple recipients."""
-        with patch("descidb.token_rewarder.Web3") as mock_web3:
+        with patch("src.token_rewarder.Web3") as mock_web3:
             with patch(
-                "descidb.token_rewarder.TokenRewarder.load_contract_abi",
+                "src.token_rewarder.TokenRewarder.load_contract_abi",
                 return_value=mock_contract_abi,
             ):
                 # Mock web3 functionality
@@ -431,12 +431,12 @@ class TestTokenRewarder:
 
     def test_get_user_rewards(self, mock_contract_abi):
         """Test getting user rewards from database."""
-        with patch("descidb.token_rewarder.Web3"):
+        with patch("src.token_rewarder.Web3"):
             with patch(
-                "descidb.token_rewarder.TokenRewarder.load_contract_abi",
+                "src.token_rewarder.TokenRewarder.load_contract_abi",
                 return_value=mock_contract_abi,
             ):
-                with patch("descidb.token_rewarder.os.getenv"):
+                with patch("src.token_rewarder.os.getenv"):
                     # Mock database connection and cursor
                     mock_conn = Mock()
                     mock_cursor = Mock()
@@ -472,12 +472,12 @@ class TestTokenRewarder:
 
     def test_reward_users_default(self, mock_contract_abi):
         """Test rewarding users using the default strategy."""
-        with patch("descidb.token_rewarder.Web3"):
+        with patch("src.token_rewarder.Web3"):
             with patch(
-                "descidb.token_rewarder.TokenRewarder.load_contract_abi",
+                "src.token_rewarder.TokenRewarder.load_contract_abi",
                 return_value=mock_contract_abi,
             ):
-                with patch("descidb.token_rewarder.os.getenv"):
+                with patch("src.token_rewarder.os.getenv"):
                     # Mock get_user_rewards
                     user_rewards = {"user1": 5, "user2": 10}
 

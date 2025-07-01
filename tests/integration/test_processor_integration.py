@@ -66,16 +66,16 @@ class TestProcessorIntegration:
     @pytest.fixture
     def mock_processor_class(self):
         """Create a mock processor class."""
-        with patch("descidb.core.processor_main.Processor") as mock_class:
+        with patch("src.core.processor_main.Processor") as mock_class:
             # Set up the mock processor instance
             mock_processor = MagicMock()
             mock_class.return_value = mock_processor
             yield mock_class
 
-    @patch("descidb.core.processor_main.VectorDatabaseManager")
-    @patch("descidb.core.processor_main.PostgresDBManager")
-    @patch("descidb.core.processor_main.TokenRewarder")
-    @patch("descidb.core.processor_main.load_config")
+    @patch("src.core.processor_main.VectorDatabaseManager")
+    @patch("src.core.processor_main.PostgresDBManager")
+    @patch("src.core.processor_main.TokenRewarder")
+    @patch("src.core.processor_main.load_config")
     def test_processor_workflow(
         self,
         mock_load_config,
@@ -126,7 +126,7 @@ class TestProcessorIntegration:
             "time.sleep"
         ):
             # Call the processor function
-            from descidb.core.processor_main import test_processor
+            from src.core.processor_main import test_processor
 
             test_processor()
 

@@ -30,10 +30,10 @@ jobs:
         run: bash scripts/test.sh --integration
 
       - name: Check code style
-        run: poetry run flake8 descidb
+        run: poetry run flake8 src
 
       - name: Check types
-        run: poetry run mypy descidb
+        run: poetry run mypy src
 
       - name: Build package
         run: poetry build

@@ -1,6 +1,6 @@
 #!/bin/bash
 # start_server.sh
-# DESCRIPTION: Start the DeSciDB FastAPI server with configurable options
+# DESCRIPTION: Start FastAPI server with configurable options
 set -e
 
 # Default configuration
@@ -13,7 +13,7 @@ LOG_LEVEL="info"
 # Help message
 function show_help {
     echo "Usage: start_server.sh [OPTIONS]"
-    echo "Start the DeSciDB FastAPI server"
+    echo "Start FastAPI server"
     echo ""
     echo "Options:"
     echo "  -p, --port PORT        Port to run the server on (default: 5000)"
@@ -65,13 +65,13 @@ if [ -f .env ]; then
 fi
 
 # Start the server
-echo "Starting DeSciDB FastAPI server..."
+echo "Starting FastAPI server..."
 echo "Host: $HOST, Port: $PORT, Environment: $ENV"
 
 if [ "$ENV" = "production" ]; then
     echo "Running in production mode with $WORKERS workers"
-    poetry run uvicorn descidb.server.single_server:app --host "$HOST" --port "$PORT" --workers "$WORKERS" --log-level "$LOG_LEVEL"
+    poetry run uvicorn src.server.single_server:app --host "$HOST" --port "$PORT" --workers "$WORKERS" --log-level "$LOG_LEVEL"
 else
     echo "Running in development mode with auto-reload enabled"
-    poetry run uvicorn descidb.server.single_server:app --host "$HOST" --port "$PORT" --reload --log-level "$LOG_LEVEL"
+    poetry run uvicorn src.server.single_server:app --host "$HOST" --port "$PORT" --reload --log-level "$LOG_LEVEL"
 fi 

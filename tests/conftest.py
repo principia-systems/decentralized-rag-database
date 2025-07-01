@@ -36,8 +36,8 @@ for mod_name in MOCK_MODULES:
         sys.modules[f"{mod_name}.{submod}.donut.processor"] = MockModule()
 
 # Set up mock for the convert function
-sys.modules["descidb.core.converter"] = MockModule()
-sys.modules["descidb.core.converter"].convert = MagicMock()
+sys.modules["src.core.converter"] = MockModule()
+sys.modules["src.core.converter"].convert = MagicMock()
 
 
 @pytest.fixture
@@ -97,7 +97,7 @@ def mock_environment_variables():
         "NEO4J_USERNAME": "test_neo4j_user",
         "NEO4J_PASSWORD": "test_neo4j_password",
         "LIGHTHOUSE_TOKEN": "test_lighthouse_token",
-        "DESCIDB_LOG_LEVEL": "DEBUG",
+        "SRC_LOG_LEVEL": "DEBUG",
     }
 
     # Save original values and set test values

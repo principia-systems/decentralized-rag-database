@@ -1,11 +1,11 @@
-"""Tests for Neo4j graph database manager in DeSciDB."""
+"""Tests for Neo4j graph database manager in src."""
 
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 import requests
 
-from descidb.db.graph_db import IPFSNeo4jGraph
+from src.db.graph_db import IPFSNeo4jGraph
 
 
 class TestIPFSNeo4jGraph:

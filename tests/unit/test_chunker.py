@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from descidb.core.chunker import (
+from src.core.chunker import (
     chunk,
     chunk_from_url,
     fixed_length,
@@ -123,7 +123,7 @@ class TestChunker:
         with pytest.raises(KeyError):
             chunk("invalid_chunker", text)
 
-    @patch("descidb.chunker.download_from_url")
+    @patch("src.chunker.download_from_url")
     def test_chunk_from_url(self, mock_download):
         """Test the chunk_from_url function."""
         # Set up mock

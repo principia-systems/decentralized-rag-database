@@ -1,6 +1,6 @@
 #!/bin/bash
 # start_light_server.sh
-# DESCRIPTION: Start the DeSciDB Light FastAPI server (evaluation, status)
+# DESCRIPTION: Start Light FastAPI server (evaluation, status)
 set -e
 
 # Default configuration
@@ -13,7 +13,7 @@ LOG_LEVEL="info"
 # Help message
 function show_help {
     echo "Usage: start_light_server.sh [OPTIONS]"
-    echo "Start the DeSciDB Light FastAPI server (quick operations)"
+    echo "Start Light FastAPI server (quick operations)"
     echo ""
     echo "Options:"
     echo "  -p, --port PORT          Port to run the server on (default: 5001)"
@@ -56,7 +56,7 @@ function stop_server {
     fi
     
     # Also kill any uvicorn processes related to light_app
-    pkill -f "descidb.server.light_app" 2>/dev/null || true
+    pkill -f "src.server.light_app" 2>/dev/null || true
     
     echo "Light server shutdown complete"
     exit 0
@@ -125,7 +125,7 @@ if lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
     exit 1
 fi
 
-echo "Starting DeSciDB Light server..."
+echo "Starting Light server..."
 echo "Server: $HOST:$PORT"
 echo "Environment: $ENV"
 echo "Workers: $WORKERS"
@@ -137,20 +137,20 @@ LOG_FILE="logs/light_server.log"
 
 if [ "$ENV" = "production" ]; then
     echo "Starting Light server in production mode with $WORKERS workers"
-    poetry run uvicorn descidb.server.light_app:app \
-        --host "$HOST" \
-        --port "$PORT" \
-        --workers "$WORKERS" \
-        --log-level "$LOG_LEVEL" \
+            poetry run uvicorn src.server.light_app:app \
+            --host "$HOST" \
+            --port "$PORT" \
+            --workers "$WORKERS" \
+            --log-level "$LOG_LEVEL" \
         --access-log \
         > "$LOG_FILE" 2>&1 &
 else
     echo "Starting Light server in development mode (single worker with reload)"
-    poetry run uvicorn descidb.server.light_app:app \
-        --host "$HOST" \
-        --port "$PORT" \
-        --reload \
-        --log-level "$LOG_LEVEL" \
+            poetry run uvicorn src.server.light_app:app \
+            --host "$HOST" \
+            --port "$PORT" \
+            --reload \
+            --log-level "$LOG_LEVEL" \
         > "$LOG_FILE" 2>&1 &
 fi
 

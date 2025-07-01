@@ -91,7 +91,7 @@ bash scripts/test.sh --integration      # Run integration tests
 - Uploads outputs to IPFS and stores metadata in databases
 - Logs all processing as Git commits
 
-All core components are modular and can be customized by implementing new classes under `descidb/core/` and specifying them in the config file.
+All core components are modular and can be customized by implementing new classes under `src/core/` and specifying them in the config file.
 
 Configurable at [`config/processor.yml`](config/processor.yml):
 
@@ -149,7 +149,7 @@ databases:
     embedder: openai
 ```
 
-Extend `descidb/rewards/token_rewarder.py` to customize reward mechanisms.
+Extend `src/rewards/token_rewarder.py` to customize reward mechanisms.
 
 ---
 
@@ -170,7 +170,7 @@ Extend `descidb/rewards/token_rewarder.py` to customize reward mechanisms.
 ```bash
 coophive-markdown-converter/
 ├── config/        # YAML pipeline configs
-├── descidb/       # Core libraries (processing, storage, rewards)
+├── src/       # Core libraries (processing, storage, rewards)
 ├── scripts/       # CLI scripts for pipelines
 ├── contracts/     # Blockchain contract ABIs
 ├── docker/        # Container specs
