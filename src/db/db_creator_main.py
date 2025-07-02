@@ -85,7 +85,6 @@ def create_user_database(user_email: str):
     user_temp_path = PROJECT_ROOT / "temp" / user_email
     mappings_file_path = user_temp_path / "mappings.json"
     mapping_embed_file_path = user_temp_path / "mapping_embed.json"
-    jobs_file_path = user_temp_path / "jobs.json"
 
     if not mappings_file_path.exists():
         logger.error(f"No mappings.json file found for user {user_email}. Please run processor first.")
@@ -96,6 +95,7 @@ def create_user_database(user_email: str):
     with open(mappings_file_path, "r") as file:
         mappings = json.load(file)
     
+    jobs_file_path = user_temp_path / "jobs.json"
     with open(jobs_file_path, "r") as file:
         jobs = json.load(file)
     
@@ -133,7 +133,7 @@ def create_user_database(user_email: str):
             new_combinations = [combo for combo in db_combinations if combo not in existing_combinations]
             if new_combinations:
                 items_to_process[pdf_cid] = new_combinations
-    
+
     number_items_to_process = sum(len(combos) for combos in items_to_process.values())
     increment_job_progress(user_email, remaining_jobs - number_items_to_process)
 
@@ -200,6 +200,8 @@ def create_user_database(user_email: str):
                 increment_job_progress(user_email, 1)
             except Exception as e:
                 logger.error(f"Error processing {pdf_cid} with {db_combination}: {e}")
+                increment_job_progress(user_email, 1)
+                successfully_processed[pdf_cid].append(db_combination)
                 continue
 
     # Update mapping_embed.json with successfully processed items

@@ -262,6 +262,7 @@ def increment_job_progress(user_email):
     from src.utils.file_lock import increment_job_progress_safe
     success = increment_job_progress_safe(user_email, 1)
     if not success:
+        increment_job_progress_safe(user_email, 1)
         print(f"[PROCESSOR] Failed to increment job progress for {user_email}")
     # Note: Success messages are handled by the file_lock module
 
