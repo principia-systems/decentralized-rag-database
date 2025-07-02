@@ -7,9 +7,9 @@ from typing import List, Literal, Callable
 # Type definitions - 4 selected embedding models with <2B parameters
 EmbedderType = Literal[
     "openai", 
-    "bge-large",
-    "nomic-embed-text",
-    "instructor-xl"
+    "bge",
+    "nomic",
+    "instructor"
 ] 
 Embedding = List[float] 
 
