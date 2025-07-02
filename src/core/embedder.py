@@ -54,14 +54,14 @@ def embed(embeder_type: EmbedderType, input_text: str) -> Embedding:
     embedding_methods: Dict[str, EmbedderFunc] = {
         "openai": openai,
         "bge-large": bge_large,
-        "bge": e5_mistral_7b,
+        "bge": stella_1_5b,
         "e5-large": e5_large,
         "gte-large": gte_large,
         "instructor-xl": instructor_xl,
         "stella-1.5b": stella_1_5b,
         "e5-mistral-7b": e5_mistral_7b,
         "nomic-embed-text": nomic_embed_text,
-        "jina-embeddings-v2-base-en": jina_embeddings_v2_base_en
+        "jina-embeddings-v2-base-en": jina_embeddings_v2_base_en,
     }
 
     if embeder_type not in embedding_methods:
