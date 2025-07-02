@@ -95,10 +95,14 @@ def create_user_database(user_email: str):
     with open(mappings_file_path, "r") as file:
         mappings = json.load(file)
     
-    jobs_file_path = user_temp_path / "jobs.json"
-    with open(jobs_file_path, "r") as file:
-        jobs = json.load(file)
+    # Load job tracking from global jobs.json (thread-safe)
+    from src.utils.file_lock import load_jobs_safe
+    jobs = load_jobs_safe()
     
+    if user_email not in jobs:
+        logger.error(f"No job tracking found for user {user_email}")
+        return
+        
     total_jobs = jobs[user_email][0]
     completed_jobs = jobs[user_email][1]
     remaining_jobs = total_jobs - completed_jobs
@@ -134,8 +138,16 @@ def create_user_database(user_email: str):
             if new_combinations:
                 items_to_process[pdf_cid] = new_combinations
 
+    # Calculate how many items we need to process vs already processed
     number_items_to_process = sum(len(combos) for combos in items_to_process.values())
-    increment_job_progress(user_email, remaining_jobs - number_items_to_process)
+    already_processed_increment = remaining_jobs - number_items_to_process
+    
+    logger.info(f"DB Creator: remaining_jobs={remaining_jobs}, items_to_process={number_items_to_process}")
+    logger.info(f"DB Creator: Incrementing by {already_processed_increment} for already processed items")
+    
+    # Increment for already processed DB creator work
+    if already_processed_increment > 0:
+        increment_job_progress(user_email, already_processed_increment)
 
     if not items_to_process:
         logger.info("No new items to process. All mappings are already embedded.")
@@ -197,9 +209,11 @@ def create_user_database(user_email: str):
                 create_db.process_paths(pdf_cid, relationship_path, db_combination)
                 successfully_processed[pdf_cid].append(db_combination)
                 total_processed += 1
+                # Increment for each item we actually process
                 increment_job_progress(user_email, 1)
             except Exception as e:
                 logger.error(f"Error processing {pdf_cid} with {db_combination}: {e}")
+                # Still increment even on error (job was attempted)
                 increment_job_progress(user_email, 1)
                 successfully_processed[pdf_cid].append(db_combination)
                 continue
