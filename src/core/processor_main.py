@@ -258,25 +258,12 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
 
 
 def increment_job_progress(user_email):
-    """Increment completed job count for user"""
-    jobs_file = PROJECT_ROOT / "temp" / "jobs.json"
-    try:
-        if jobs_file.exists():
-            with open(jobs_file, 'r') as f:
-                jobs = json.load(f)
-            
-            if user_email in jobs:
-                if isinstance(jobs[user_email], list) and len(jobs[user_email]) >= 2:
-                    jobs[user_email][1] += 1
-                    
-                    with open(jobs_file, 'w') as f:
-                        json.dump(jobs, f, indent=2)
-                else:
-                    print(f"[PROCESSOR] Invalid job structure for {user_email}")
-            else:
-                print(f"[PROCESSOR] No job found for {user_email}")
-    except Exception as e:
-        print(f"[PROCESSOR] Error updating job progress: {e}")
+    """Increment completed job count for user - using thread-safe implementation"""
+    from src.utils.file_lock import increment_job_progress_safe
+    success = increment_job_progress_safe(user_email, 1)
+    if not success:
+        print(f"[PROCESSOR] Failed to increment job progress for {user_email}")
+    # Note: Success messages are handled by the file_lock module
 
 
 if __name__ == "__main__":

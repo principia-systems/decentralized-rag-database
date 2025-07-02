@@ -17,6 +17,7 @@ from src.db.chroma_client import VectorDatabaseManager
 from src.db.db_creator import DatabaseCreator
 from src.db.graph_db import IPFSNeo4jGraph
 from src.utils.logging_utils import get_logger
+from src.utils.file_lock import increment_job_progress_safe
 
 # Get module logger
 logger = get_logger(__name__)
@@ -46,26 +47,11 @@ def load_config():
 
 
 def increment_job_progress(user_email, increment=1):
-    """Increment completed job count for user"""
-    jobs_file = PROJECT_ROOT / "temp" / "jobs.json"
-    try:
-        if jobs_file.exists():
-            with open(jobs_file, 'r') as f:
-                jobs = json.load(f)
-            
-            if user_email in jobs:
-                if isinstance(jobs[user_email], list) and len(jobs[user_email]) >= 2:
-                    jobs[user_email][1] += increment
-                    
-                    with open(jobs_file, 'w') as f:
-                        json.dump(jobs, f, indent=2)
-                    print(f"[DB_CREATOR] Incremented job progress for {user_email}: {jobs[user_email][1]}/{jobs[user_email][0]}")
-                else:
-                    print(f"[DB_CREATOR] Invalid job structure for {user_email}")
-            else:
-                print(f"[DB_CREATOR] No job found for {user_email}")
-    except Exception as e:
-        print(f"[DB_CREATOR] Error updating job progress: {e}")
+    """Increment completed job count for user - using thread-safe implementation"""
+    success = increment_job_progress_safe(user_email, increment)
+    if not success:
+        print(f"[DB_CREATOR] Failed to increment job progress for {user_email}")
+    # Note: Success messages are handled by the file_lock module
 
 
 def create_user_database(user_email: str):
@@ -128,6 +114,8 @@ def create_user_database(user_email: str):
 
     # Find what needs to be processed (items in mappings but not in mapping_embed)
     items_to_process = {}
+    total_existing_combinations = 0
+    
     for pdf_cid, db_combinations in mappings.items():
         if pdf_cid not in mapping_embed:
             # CID not embedded at all
@@ -135,10 +123,13 @@ def create_user_database(user_email: str):
         else:
             # CID exists, check which combinations are missing
             existing_combinations = set(mapping_embed[pdf_cid])
-            increment_job_progress(user_email, len(existing_combinations))
             new_combinations = [combo for combo in db_combinations if combo not in existing_combinations]
+            total_existing_combinations += len(existing_combinations)
             if new_combinations:
                 items_to_process[pdf_cid] = new_combinations
+
+    logger.info(f"Total existing combinations: {total_existing_combinations}")
+    increment_job_progress(user_email, total_existing_combinations)
 
     if not items_to_process:
         logger.info("No new items to process. All mappings are already embedded.")

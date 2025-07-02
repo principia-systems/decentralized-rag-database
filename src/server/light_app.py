@@ -211,15 +211,16 @@ async def evaluate_endpoint(request: EvaluationRequest):
 @app.get("/api/status")
 async def get_user_status(user_email: str):
     """Get processing status for a specific user - fast status check"""
-    jobs_file = PROJECT_ROOT / "temp" / "jobs.json"
     try:
-        with open(jobs_file, 'r') as f:
-            jobs = json.load(f)
+        # Use thread-safe file locking for reading jobs.json
+        from src.utils.file_lock import load_jobs_safe
+        jobs = load_jobs_safe()
         total_jobs, completed_jobs = jobs.get(user_email, [0, 0])
+        completion_percentage = (completed_jobs / total_jobs * 100) if total_jobs > 0 else 0
         return {
             "total_jobs": total_jobs,
             "completed_jobs": completed_jobs,
-            "completion_percentage": (completed_jobs / total_jobs) * 100
+            "completion_percentage": completion_percentage
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

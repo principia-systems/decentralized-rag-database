@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.utils.gdrive_scraper import scrape_gdrive_pdfs
 from src.core.processor_main import process_combination
 from src.db.db_creator_main import create_user_database
+from src.utils.file_lock import reset_job_tracking_safe, save_jobs_safe
 
 # Setup FastAPI app
 app = FastAPI(
@@ -36,31 +37,18 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 # Global lock for database creation to prevent concurrent write conflicts
 _db_creation_lock = asyncio.Lock()
 
-# Job tracking functions
+# Job tracking functions are now handled by src.utils.file_lock module
+# These functions are kept for backward compatibility but should not be used
 def load_jobs():
-    """Load jobs from temp/jobs.json"""
-    jobs_file = PROJECT_ROOT / "temp" / "jobs.json"
-    try:
-        if jobs_file.exists():
-            with open(jobs_file, 'r') as f:
-                return json.load(f)
-        else:
-            return {}
-    except Exception as e:
-        print(f"[HEAVY] Error loading jobs.json: {e}")
-        return {}
+    """DEPRECATED: Use load_jobs_safe() from src.utils.file_lock instead"""
+    print("[HEAVY] WARNING: Using deprecated load_jobs(). Use file_lock.load_jobs_safe() instead.")
+    from src.utils.file_lock import load_jobs_safe
+    return load_jobs_safe()
 
 def save_jobs(jobs_data):
-    """Save jobs to temp/jobs.json"""
-    jobs_file = PROJECT_ROOT / "temp" / "jobs.json"
-    try:
-        # Ensure temp directory exists
-        jobs_file.parent.mkdir(exist_ok=True)
-        with open(jobs_file, 'w') as f:
-            json.dump(jobs_data, f, indent=2)
-        print(f"[HEAVY] Updated jobs.json for user")
-    except Exception as e:
-        print(f"[HEAVY] Error saving jobs.json: {e}")
+    """DEPRECATED: Use save_jobs_safe() from src.utils.file_lock instead"""
+    print("[HEAVY] WARNING: Using deprecated save_jobs(). Use file_lock.save_jobs_safe() instead.")
+    return save_jobs_safe(jobs_data)
 
 # Background processing function
 async def background_processing(
@@ -256,12 +244,13 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         
         print(f"[HEAVY] Downloaded {len(downloaded_files)} files, starting background processing...")
         
-        # Update job tracking when request comes in
-        jobs = load_jobs()
+        # Reset job tracking for this new batch - using thread-safe version
         total_jobs = (len(processing_combinations) * len(downloaded_files)) * 2
-        jobs[request.user_email] = [total_jobs, 0]  # [total_jobs, completed_jobs]
-        save_jobs(jobs)
-        print(f"[HEAVY] Initialized job tracking for {request.user_email}: 0/{total_jobs}")
+        success = reset_job_tracking_safe(request.user_email, total_jobs)
+        if not success:
+            print(f"[HEAVY] Warning: Failed to reset job tracking for {request.user_email}")
+        else:
+            print(f"[HEAVY] Reset job tracking for {request.user_email}: 0/{total_jobs}")
 
         # Start background processing (don't await)
         asyncio.create_task(background_processing(
