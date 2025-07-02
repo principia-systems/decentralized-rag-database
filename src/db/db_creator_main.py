@@ -124,11 +124,10 @@ def create_user_database(user_email: str):
             # CID exists, check which combinations are missing
             existing_combinations = set(mapping_embed[pdf_cid])
             new_combinations = [combo for combo in db_combinations if combo not in existing_combinations]
-            total_existing_combinations += len(existing_combinations)
+            total_existing_combinations += (len(db_combinations) - len(new_combinations))
             if new_combinations:
                 items_to_process[pdf_cid] = new_combinations
 
-    logger.info(f"Total existing combinations: {total_existing_combinations}")
     increment_job_progress(user_email, total_existing_combinations)
 
     if not items_to_process:
