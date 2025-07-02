@@ -99,8 +99,8 @@ def create_user_database(user_email: str):
     with open(jobs_file_path, "r") as file:
         jobs = json.load(file)
     
-    total_jobs = jobs["total_jobs"]
-    completed_jobs = jobs["completed_jobs"]
+    total_jobs = jobs[user_email][0]
+    completed_jobs = jobs[user_email][1]
     remaining_jobs = total_jobs - completed_jobs
 
     if not mappings:
