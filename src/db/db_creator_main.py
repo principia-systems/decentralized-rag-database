@@ -209,11 +209,9 @@ def create_user_database(user_email: str):
                 create_db.process_paths(pdf_cid, relationship_path, db_combination)
                 successfully_processed[pdf_cid].append(db_combination)
                 total_processed += 1
-                # Increment for each item we actually process
                 increment_job_progress(user_email, 1)
             except Exception as e:
                 logger.error(f"Error processing {pdf_cid} with {db_combination}: {e}")
-                # Still increment even on error (job was attempted)
                 increment_job_progress(user_email, 1)
                 successfully_processed[pdf_cid].append(db_combination)
                 continue

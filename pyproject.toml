@@ -34,6 +34,7 @@ marker-pdf = "^1.6.2"
 types-psycopg2 = "^2.9.21.20250318"
 types-pyyaml = "^6.0.12.20250402"
 sentence-transformers = "^4.1.0"
+torch = "^2.5.1"
 markdown = "^3.8"
 markitdown = {version = "^0.1.1", extras = ["pdf"]}
 fastapi = "0.115.9"
