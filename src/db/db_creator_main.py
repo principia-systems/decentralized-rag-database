@@ -85,6 +85,7 @@ def create_user_database(user_email: str):
     user_temp_path = PROJECT_ROOT / "temp" / user_email
     mappings_file_path = user_temp_path / "mappings.json"
     mapping_embed_file_path = user_temp_path / "mapping_embed.json"
+    jobs_file_path = user_temp_path / "jobs.json"
 
     if not mappings_file_path.exists():
         logger.error(f"No mappings.json file found for user {user_email}. Please run processor first.")
@@ -94,6 +95,13 @@ def create_user_database(user_email: str):
     # Load mappings
     with open(mappings_file_path, "r") as file:
         mappings = json.load(file)
+    
+    with open(jobs_file_path, "r") as file:
+        jobs = json.load(file)
+    
+    total_jobs = jobs["total_jobs"]
+    completed_jobs = jobs["completed_jobs"]
+    remaining_jobs = total_jobs - completed_jobs
 
     if not mappings:
         logger.warning(f"Empty mappings file for user {user_email}")
@@ -114,7 +122,6 @@ def create_user_database(user_email: str):
 
     # Find what needs to be processed (items in mappings but not in mapping_embed)
     items_to_process = {}
-    total_existing_combinations = 0
     
     for pdf_cid, db_combinations in mappings.items():
         if pdf_cid not in mapping_embed:
@@ -124,11 +131,11 @@ def create_user_database(user_email: str):
             # CID exists, check which combinations are missing
             existing_combinations = set(mapping_embed[pdf_cid])
             new_combinations = [combo for combo in db_combinations if combo not in existing_combinations]
-            total_existing_combinations += (len(db_combinations) - len(new_combinations))
             if new_combinations:
                 items_to_process[pdf_cid] = new_combinations
-
-    # increment_job_progress(user_email, total_existing_combinations)
+    
+    number_items_to_process = sum(len(combos) for combos in items_to_process.values())
+    increment_job_progress(user_email, remaining_jobs - number_items_to_process)
 
     if not items_to_process:
         logger.info("No new items to process. All mappings are already embedded.")
