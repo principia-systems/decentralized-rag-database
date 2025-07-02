@@ -128,7 +128,7 @@ def create_user_database(user_email: str):
             if new_combinations:
                 items_to_process[pdf_cid] = new_combinations
 
-    increment_job_progress(user_email, total_existing_combinations)
+    # increment_job_progress(user_email, total_existing_combinations)
 
     if not items_to_process:
         logger.info("No new items to process. All mappings are already embedded.")
