@@ -23,11 +23,11 @@ app = FastAPI(
     version="0.1.0"
 )
 
-# Add CORS middleware
+# Add CORS middleware - Allow all origins for development with ngrok
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "https://coophive-wine.vercel.app"],
-    allow_credentials=True,
+    allow_origins=["*"],  # Allow all origins for ngrok compatibility
+    allow_credentials=False,  # Must be False when allow_origins=["*"]
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
