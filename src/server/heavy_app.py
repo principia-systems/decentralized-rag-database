@@ -1,5 +1,5 @@
 # Heavy FastAPI server for resource-intensive endpoints (ingestion, processing)
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import os
@@ -14,7 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.utils.gdrive_scraper import scrape_gdrive_pdfs
 from src.core.processor_main import process_combination
 from src.db.db_creator_main import create_user_database
-from src.utils.file_lock import reset_job_tracking_safe, save_jobs_safe
+from src.utils.logging_utils import get_user_logger
+from src.utils.file_lock import load_jobs_safe, save_jobs_safe, reset_job_tracking_safe
 
 # Setup FastAPI app
 app = FastAPI(
@@ -41,14 +42,13 @@ _db_creation_lock = asyncio.Lock()
 # These functions are kept for backward compatibility but should not be used
 def load_jobs():
     """DEPRECATED: Use load_jobs_safe() from src.utils.file_lock instead"""
-    print("[HEAVY] WARNING: Using deprecated load_jobs(). Use file_lock.load_jobs_safe() instead.")
-    from src.utils.file_lock import load_jobs_safe
     return load_jobs_safe()
 
 def save_jobs(jobs_data):
     """DEPRECATED: Use save_jobs_safe() from src.utils.file_lock instead"""
     print("[HEAVY] WARNING: Using deprecated save_jobs(). Use file_lock.save_jobs_safe() instead.")
     return save_jobs_safe(jobs_data)
+
 
 # Background processing function
 async def background_processing(
@@ -58,13 +58,16 @@ async def background_processing(
     user_email: str
 ):
     """Handle all processing in the background"""
+    # Create user-specific logger for this processing session
+    logger = get_user_logger(user_email, "background_processing")
+    
     try:
-        print(f"[HEAVY] Starting background processing for {user_email}")
+        logger.info(f"Starting background processing for {user_email}")
         
         # Process each combination
         processing_tasks = []
         for converter, chunker, embedder in processing_combinations:
-            print(f"[HEAVY] Creating task for combination: {converter}_{chunker}_{embedder}")
+            logger.info(f"Creating task for combination: {converter}_{chunker}_{embedder}")
             task = asyncio.create_task(
                 process_combination(
                     converter=converter,
@@ -78,52 +81,52 @@ async def background_processing(
             processing_tasks.append(task)
         
         # Wait for all processing tasks to complete concurrently
-        print(f"[HEAVY] Running {len(processing_tasks)} combinations concurrently...")
+        logger.info(f"Running {len(processing_tasks)} combinations concurrently...")
         results = await asyncio.gather(*processing_tasks, return_exceptions=True)
         
         # Log any errors from the concurrent processing
         for i, result in enumerate(results):
             converter, chunker, embedder = processing_combinations[i]
             if isinstance(result, Exception):
-                print(f"[HEAVY] Error processing combination {converter}_{chunker}_{embedder}: {str(result)}")
+                logger.error(f"Error processing combination {converter}_{chunker}_{embedder}: {str(result)}")
             else:
-                print(f"[HEAVY] Successfully completed combination {converter}_{chunker}_{embedder}")
+                logger.info(f"Successfully completed combination {converter}_{chunker}_{embedder}")
         
-        print(f"[HEAVY] All processing combinations completed")
+        logger.info("All processing combinations completed")
         
         # Clean up: Delete all PDFs from user's papers directory after processing
         try:
-            print(f"[HEAVY] Cleaning up PDFs from user directory: {user_papers_dir}")
+            logger.info(f"Cleaning up PDFs from user directory: {user_papers_dir}")
             pdf_files = glob.glob(os.path.join(user_papers_dir, "*.pdf"))
             deleted_count = 0
             for pdf_file in pdf_files:
                 try:
                     os.remove(pdf_file)
                     deleted_count += 1
-                    print(f"[HEAVY] Deleted: {os.path.basename(pdf_file)}")
+                    logger.debug(f"Deleted: {os.path.basename(pdf_file)}")
                 except Exception as delete_error:
-                    print(f"[HEAVY] Error deleting {pdf_file}: {str(delete_error)}")
+                    logger.error(f"Error deleting {pdf_file}: {str(delete_error)}")
             
-            print(f"[HEAVY] Successfully deleted {deleted_count} PDF files from user directory")
+            logger.info(f"Successfully deleted {deleted_count} PDF files from user directory")
         except Exception as cleanup_error:
-            print(f"[HEAVY] Error during PDF cleanup: {str(cleanup_error)}")
+            logger.error(f"Error during PDF cleanup: {str(cleanup_error)}")
 
         # Automatically create user database after processing completes
         try:
-            print(f"[HEAVY] Creating database for user: {user_email}")
+            logger.info(f"Creating database for user: {user_email}")
             # Use async lock to prevent concurrent database creation conflicts
             async with _db_creation_lock:
-                print(f"[HEAVY] Acquired lock for database creation: {user_email}")
+                logger.debug(f"Acquired lock for database creation: {user_email}")
                 # Run database creation directly in async context to avoid SQLite threading issues
                 create_user_database(user_email)
-            print(f"[HEAVY] Successfully created database for user: {user_email}")
+            logger.info(f"Successfully created database for user: {user_email}")
         except Exception as db_error:
-            print(f"[HEAVY] Error creating user database: {str(db_error)}")
+            logger.error(f"Error creating user database: {str(db_error)}")
 
-        print(f"[HEAVY] Background processing completed for {user_email}")
+        logger.info(f"Background processing completed for {user_email}")
         
     except Exception as e:
-        print(f"[HEAVY] Error in background processing for {user_email}: {str(e)}")
+        logger.error(f"Error in background processing for {user_email}: {str(e)}")
 
 
 # Define request/response models
@@ -164,9 +167,12 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
     background processing for all converter, chunker, and embedder combinations.
     Returns immediately after starting the processing.
     """
+    # Create user-specific logger for this request
+    logger = get_user_logger(request.user_email, "gdrive_ingestion")
+    
     try:
-        print(f"[HEAVY] Processing Google Drive ingestion for user: {request.user_email}")
-        print(f"[HEAVY] Drive URL: {request.drive_url}")
+        logger.info(f"Processing Google Drive ingestion for user: {request.user_email}")
+        logger.info(f"Drive URL: {request.drive_url}")
         
         # Validate the Google Drive URL
         if "drive.google.com" not in request.drive_url:
@@ -187,15 +193,15 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
                     status_code=400,
                     detail=f"Invalid converter '{converter}'. Valid options: {valid_converters}"
                 )
-        print(f"[HEAVY] Valid chunkers: {valid_chunkers}")
+        logger.debug(f"Valid chunkers: {valid_chunkers}")
         for chunker in request.chunkers:
             if chunker not in valid_chunkers:
-                print(f"[HEAVY] Invalid chunker: {chunker}")
+                logger.error(f"Invalid chunker: {chunker}")
                 raise HTTPException(
                     status_code=400,
                     detail=f"Invalid chunker '{chunker}'. Valid options: {valid_chunkers}"
                 )
-        print(f"[HEAVY] Valid chunkers: {valid_chunkers}")
+        logger.debug(f"Validated chunkers: {request.chunkers}")
         
         for embedder in request.embedders:
             if embedder not in valid_embedders:
@@ -224,15 +230,17 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
             for converter, chunker, embedder in processing_combinations
         ]
         
-        print(f"[HEAVY] Will process {len(processing_combinations)} combinations")
+        logger.info(f"Will process {len(processing_combinations)} combinations")
         
         # Download PDFs from Google Drive to user-specific papers folder
         downloaded_files = scrape_gdrive_pdfs(
             drive_url=request.drive_url,
-            download_dir=user_papers_dir
+            download_dir=user_papers_dir,
+            user_email=request.user_email
         )
         
         if not downloaded_files:
+            logger.warning("No PDF files found or downloaded from the Google Drive folder")
             return IngestGDriveResponse(
                 success=False,
                 message="No PDF files found or downloaded from the Google Drive folder",
@@ -242,15 +250,15 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
                 processing_started=False
             )
         
-        print(f"[HEAVY] Downloaded {len(downloaded_files)} files, starting background processing...")
+        logger.info(f"Downloaded {len(downloaded_files)} files, starting background processing...")
         
         # Reset job tracking for this new batch - using thread-safe version
         total_jobs = (len(processing_combinations) * len(downloaded_files)) * 2
         success = reset_job_tracking_safe(request.user_email, total_jobs)
         if not success:
-            print(f"[HEAVY] Warning: Failed to reset job tracking for {request.user_email}")
+            logger.warning(f"Failed to reset job tracking for {request.user_email}")
         else:
-            print(f"[HEAVY] Reset job tracking for {request.user_email}: 0/{total_jobs}")
+            logger.info(f"Initialized job tracking for {request.user_email}: 0/{total_jobs}")
 
         # Start background processing (don't await)
         asyncio.create_task(background_processing(
@@ -260,7 +268,7 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
             user_email=request.user_email
         ))
         
-        print(f"[HEAVY] Background processing started, returning response immediately")
+        logger.info("Background processing started, returning response immediately")
 
         # Return immediately
         return IngestGDriveResponse(
@@ -273,8 +281,10 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         )
         
     except ValueError as e:
+        logger.error(f"Validation error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"Error ingesting PDFs: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error ingesting PDFs: {str(e)}")
 
 @app.get("/health")

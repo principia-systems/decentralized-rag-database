@@ -68,4 +68,4 @@ def _load_bge() -> SentenceTransformer:
 
 def bge(text: str) -> Embedding:
     model = _load_bge()
-    return model.encode(text, show_progress_bar=False).tol
+    return model.encode(text, show_progress_bar=False).tolist()
