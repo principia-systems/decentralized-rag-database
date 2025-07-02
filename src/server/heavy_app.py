@@ -138,8 +138,8 @@ class IngestGDriveRequest(BaseModel):
         description="List of chunkers to use (fixed_length, recursive, markdown_aware, semantic_split)"
     )
     embedders: Optional[List[str]] = Field(
-        default=["bge"], 
-        description="List of embedders to use (openai, nvidia, bge)"
+        default=["bge-large"], 
+        description="List of embedders to use (openai, bge-large, nomic-embed-text, instructor-xl)"
     )
     user_email: str
 
@@ -178,7 +178,7 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         # Validate component lists
         valid_converters = ["marker", "openai", "markitdown"]
         valid_chunkers = ["fixed_length", "recursive", "markdown_aware", "semantic_split"]
-        valid_embedders = ["openai", "nvidia", "bge"]
+        valid_embedders = ["openai", "bge-large", "nomic-embed-text", "instructor-xl"]
         
         # Validate requested components
         for converter in request.converters:
