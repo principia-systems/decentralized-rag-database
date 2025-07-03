@@ -11,8 +11,6 @@ postgres:
 processing:
   max_papers: 10
   papers_directory: papers
-  metadata_file: papers/metadata.json
-  storage_directory: ../papers-graph-demo
 
 # API Keys
 api_keys:

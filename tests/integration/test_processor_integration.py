@@ -42,8 +42,6 @@ class TestProcessorIntegration:
             "storage": {"directory": "mock_storage_dir"},
             "processing": {
                 "papers_directory": "papers",
-                "metadata_file": "metadata.json",
-                "storage_directory": "storage",
                 "max_papers": 1,
             },
             "postgres": {

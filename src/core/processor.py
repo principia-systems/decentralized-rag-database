@@ -27,7 +27,6 @@ class Processor:
     def __init__(
         self,
         authorPublicKey: str,
-        metadata_file: str,
         ipfs_api_key: str,
         user_email: str,
         project_root: Optional[Path] = None,
@@ -37,7 +36,6 @@ class Processor:
 
         Args:
             authorPublicKey: Public key of the author
-            metadata_file: Path to metadata file
             ipfs_api_key: API key for Lighthouse IPFS
             user_email: Email of the user for creating user-specific folders
             project_root: Path to project root directory
@@ -45,7 +43,6 @@ class Processor:
         # Use user-specific logger
         self.logger = get_user_logger(user_email, "processor") if user_email else get_logger(__name__ + ".Processor")
         
-        self.metadata_file = metadata_file
         self.authorPublicKey = authorPublicKey  # Author Public Key
         self.ipfs_api_key = ipfs_api_key  # IPFS API Key
         self.convert_cache: Dict[str, str] = {}  # Cache for converted text
@@ -108,57 +105,6 @@ class Processor:
         # Explicitly cast to string to satisfy type checker
         hash_value: str = response.json()["Hash"]
         return hash_value
-
-    def __create_file_with_ipfs(self, content: str, file_path: str) -> str:
-        """Creates a file with the IPFS CID and returns the CID.
-
-        - content: The string content to be uploaded.
-        - file_path: The name of the file for the uploaded content.
-        - Returns: IPFS hash (CID) of the uploaded file.
-        """
-        try:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, "w") as file:
-                file.write(content)
-            return file_path  # Return the file path as a string
-        except Exception as e:
-            self.logger.error(f"Error creating file {file_path}: {e}")
-            return ""  # Return empty string in case of error
-
-    def __lighthouse_and_commit(self, object: Union[str, Path], git_path: str) -> str:
-        """Uploads a file to Lighthouse IPFS and commits the CID to git.
-
-        - object: Path to the object to be uploaded.
-        - Returns: IPFS hash (CID) of the uploaded file.
-        """
-        try:
-            object_str = str(object)
-            ipfs_cid = self.__upload_text_to_lighthouse(object_str)
-
-            hash_value = ipfs_cid.split("ipfs/")[-1]
-
-            file_path = os.path.join(git_path, f"{hash_value}.txt")
-
-            self.__create_file_with_ipfs(ipfs_cid, file_path)
-
-            subprocess.run(["git", "-C", git_path, "add", file_path], check=True)
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    git_path,
-                    "commit",
-                    "-m",
-                    f"Added IPFS CID: {hash_value}",
-                ],
-                check=True,
-            )
-
-            return ipfs_cid
-
-        except Exception as e:
-            self.logger.error(f"Error during Git commit process: {e}")
-            return ""
 
     def __write_to_file(self, content: str, file_path: Union[str, Path]) -> None:
         """Writes the content to a file.
@@ -236,24 +182,20 @@ class Processor:
         
         self.__write_mappings(user_mappings, user_mappings_path)
 
-    def process(self, pdf_path: str, databases: List[dict], git_path: str) -> None:
+    def process(self, pdf_path: str, databases: List[dict]) -> None:
         """
         Processes the PDF according to the list of database configurations passed.
 
         Args:
             pdf_path: Path to the input PDF
             databases: A list of configs, each containing a converter, chunker, and embedder
-            git_path: Path to git repository for storing CIDs
         """
         doc_id = os.path.splitext(os.path.basename(pdf_path))[0]
         self.logger.info(f"Processing document: {doc_id}")
         self.convert_cache = {}
         self.chunk_cache = {}
 
-        metadata = self.get_metadata_for_doc(self.metadata_file, doc_id)
-        if not metadata:
-            self.logger.warning(f"No metadata found for {doc_id}, using default")
-            metadata = self.default_metadata(doc_id)
+        metadata = self.default_metadata()
 
         metadata = {
             key: (
@@ -267,9 +209,7 @@ class Processor:
         }
 
         self.logger.info(f"Uploading PDF to IPFS: {pdf_path}")
-        metadata["pdf_ipfs_cid"] = self.__lighthouse_and_commit(
-            object=pdf_path, git_path=git_path
-        )
+        metadata["pdf_ipfs_cid"] = self.__upload_text_to_lighthouse(pdf_path)
 
         if not metadata["pdf_ipfs_cid"]:
             self.logger.error(f"Failed to upload PDF to IPFS: {pdf_path}")
@@ -334,9 +274,7 @@ class Processor:
                 # Upload converted text to IPFS and commit to Git
                 self.__write_to_file(converted_text, self.tmp_file_path)
 
-                converted_text_ipfs_cid = self.__lighthouse_and_commit(
-                    object=self.tmp_file_path, git_path=git_path
-                )
+                converted_text_ipfs_cid = self.__upload_text_to_lighthouse(self.tmp_file_path)
 
                 self.graph_db.add_ipfs_node(converted_text_ipfs_cid)
                 self.graph_db.create_relationship(
@@ -362,9 +300,7 @@ class Processor:
             for _, chunk_i in enumerate(chunked_text):
                 self.__write_to_file(chunk_i, self.tmp_file_path)
 
-                chunk_text_ipfs_cid = self.__lighthouse_and_commit(
-                    object=self.tmp_file_path, git_path=git_path
-                )
+                chunk_text_ipfs_cid = self.__upload_text_to_lighthouse(self.tmp_file_path)
 
                 self.graph_db.add_ipfs_node(chunk_text_ipfs_cid)
                 self.graph_db.create_relationship(
@@ -381,9 +317,7 @@ class Processor:
 
                 self.__write_to_file(json.dumps(embedding), self.tmp_file_path)
 
-                embedding_ipfs_cid = self.__lighthouse_and_commit(
-                    object=self.tmp_file_path, git_path=git_path
-                )
+                embedding_ipfs_cid = self.__upload_text_to_lighthouse(self.tmp_file_path)
                 self.graph_db.add_ipfs_node(embedding_ipfs_cid)
                 self.graph_db.create_relationship(
                     chunk_text_ipfs_cid,
@@ -396,24 +330,7 @@ class Processor:
                 
             self.__update_mappings(metadata["pdf_ipfs_cid"], db_combination)
         
-    def get_metadata_for_doc(self, metadata_file: str, doc_id: str) -> Dict[str, Any]:
-        """Retrieves metadata for the given document ID from the metadata file.
-
-        - metadata_file: Path to the metadata file.
-        - doc_id: Document ID to retrieve metadata for.
-        - Returns: Dictionary containing metadata or empty dict if not found.
-        """
-        with open(metadata_file, "r") as file:
-            for line in file:
-                try:
-                    data = json.loads(line)
-                    if data.get("id") == doc_id:
-                        return data  # type: ignore[no-any-return]
-                except json.JSONDecodeError:
-                    continue
-        return {}
-
-    def default_metadata(self, doc_id: str) -> Dict[str, Any]:
+    def default_metadata(self) -> Dict[str, Any]:
         """Returns default metadata in case None is found.
 
         The metadata.json file aready exists for Arxiv papers.

@@ -66,8 +66,6 @@ def test_processor():
 
     # Setup paths
     papers_directory = PROJECT_ROOT / processing_config["papers_directory"]
-    metadata_file = PROJECT_ROOT / processing_config["metadata_file"]
-    storage_directory = COOPHIVE_DIR / processing_config["storage_directory"]
 
     # Setup API keys and database connection
     lighthouse_api_key = os.getenv(
@@ -96,7 +94,6 @@ def test_processor():
 
     processor = Processor(
         authorPublicKey=author_config["public_key"],
-        metadata_file=str(metadata_file),
         ipfs_api_key=lighthouse_api_key,
         user_email=author_config["email"],
         project_root=PROJECT_ROOT,
@@ -105,24 +102,8 @@ def test_processor():
     try:
         for paper in papers:
             logger.info(f"Processing {paper}...")
-            random_data = os.urandom(32)
-            hash_value = hashlib.sha256(random_data).hexdigest()
 
-            paper_dir = storage_directory / hash_value
-            try:
-                os.makedirs(paper_dir, exist_ok=True)
-                # Store the current directory
-                current_dir = os.getcwd()
-                # Change to the paper directory for git operations
-                os.chdir(paper_dir)
-                subprocess.run(["git", "init"], check=True)
-                # Change back to the original directory after git init
-                os.chdir(current_dir)
-            except Exception as e:
-                logger.error(f"Error initializing git repository: {e}")
-                continue
-
-            processor.process(pdf_path=paper, databases=databases, git_path=str(paper_dir))
+            processor.process(pdf_path=paper, databases=databases)
 
         # Clean up: Delete all PDF files after processing
         logger.info("Starting cleanup: Deleting processed PDF files...")
@@ -144,13 +125,13 @@ def test_processor():
         raise
 
 
-def _process_single_paper_sync(processor, paper_path, databases, paper_dir):
+def _process_single_paper_sync(processor, paper_path, databases):
     """
     Synchronous helper function to process a single paper.
     This runs in a separate thread to avoid blocking the event loop.
     """
     try:
-        processor.process(pdf_path=str(paper_path), databases=databases, git_path=str(paper_dir))
+        processor.process(pdf_path=str(paper_path), databases=databases)
         return True, None
     except Exception as e:
         return False, str(e)
@@ -183,8 +164,6 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
 
     # Setup paths
     papers_directory = Path(user_papers_dir)
-    metadata_file = PROJECT_ROOT / processing_config["metadata_file"]
-    storage_directory = COOPHIVE_DIR / processing_config["storage_directory"]
 
     # Setup API keys and database connection
     lighthouse_api_key = os.getenv(
@@ -203,7 +182,6 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
 
     processor = Processor(
         authorPublicKey=author_config["public_key"],
-        metadata_file=str(metadata_file),
         ipfs_api_key=lighthouse_api_key,
         user_email=user_email,
         project_root=PROJECT_ROOT,
@@ -219,22 +197,6 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
             continue
             
         user_logger.info(f"Processing {paper_path} with {converter}_{chunker}_{embedder}...")
-        random_data = os.urandom(32)
-        hash_value = hashlib.sha256(random_data).hexdigest()
-
-        paper_dir = storage_directory / hash_value
-        try:
-            os.makedirs(paper_dir, exist_ok=True)
-            # Store the current directory
-            current_dir = os.getcwd()
-            # Change to the paper directory for git operations
-            os.chdir(paper_dir)
-            subprocess.run(["git", "init"], check=True)
-            # Change back to the original directory after git init
-            os.chdir(current_dir)
-        except Exception as e:
-            user_logger.error(f"Error initializing git repository: {e}")
-            continue
 
         try:
             # Run the CPU-intensive processing in a separate thread
@@ -245,7 +207,6 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
                 processor,
                 paper_path,
                 databases,
-                str(paper_dir)
             )
             
             if success:
