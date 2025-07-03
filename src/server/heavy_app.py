@@ -138,7 +138,7 @@ class IngestGDriveRequest(BaseModel):
         description="List of chunkers to use (fixed_length, recursive, markdown_aware, semantic_split)"
     )
     embedders: Optional[List[str]] = Field(
-        default=["bge-large"], 
+        default=["bge"], 
         description="List of embedders to use (openai, bge, nomic, instructor)"
     )
     user_email: str
