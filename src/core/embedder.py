@@ -24,6 +24,28 @@ logger = get_logger(__name__)
 load_dotenv(override=True)
 
 
+# Embedding dimensions for each model type
+EMBEDDING_DIMENSIONS = {
+    "openai": 1536,     # text-embedding-3-small
+    "bge": 1024,        # BAAI/bge-large-en-v1.5
+    "nomic": 768,       # nomic-ai/nomic-embed-text-v1.5
+    "instructor": 768,  # hkunlp/instructor-xl
+}
+
+
+def get_embedding_dimension(embedder_type: EmbedderType) -> int:
+    """
+    Get the embedding dimension for a specific embedder type.
+    
+    Args:
+        embedder_type: The type of embedder
+        
+    Returns:
+        int: The embedding dimension for the embedder
+    """
+    return EMBEDDING_DIMENSIONS.get(embedder_type, 768)  # Default to 768 if unknown
+
+
 def get_device() -> str:
     """
     Determine the best available device for computations.
@@ -61,7 +83,11 @@ def embed(embeder_type: EmbedderType, input_text: str) -> Embedding:
     if embeder_type not in embedding_methods:
         raise ValueError(f"Unsupported embedder type: {embeder_type}")
 
-    return embedding_methods[embeder_type](text=input_text)
+    try:
+        return embedding_methods[embeder_type](text=input_text)
+    except Exception as e:
+        logger.error(f"Error in {embeder_type} embedder: {e}")
+        raise
 
 
 def openai(text: str) -> Embedding:
@@ -97,24 +123,51 @@ def _load_nomic_embed_text() -> SentenceTransformer:
     model_name = "nomic-ai/nomic-embed-text-v1.5"
     device = get_device()
     logger.info(f"Loading Nomic Embed Text model on {device}")
-    return SentenceTransformer(model_name, device=device, trust_remote_code=True)
+    try:
+        return SentenceTransformer(model_name, device=device, trust_remote_code=True)
+    except Exception as e:
+        logger.error(f"Failed to load Nomic model: {e}")
+        logger.info("Trying to load without trust_remote_code...")
+        try:
+            return SentenceTransformer(model_name, device=device)
+        except Exception as e2:
+            logger.error(f"Failed to load Nomic model without trust_remote_code: {e2}")
+            raise
 
 
 def bge_large(text: str) -> Embedding:
     """Embed text using BGE large model with GPU support."""
-    model = _load_bge_large()
-    return model.encode(text, show_progress_bar=False, convert_to_tensor=False).tolist()
+    try:
+        model = _load_bge_large()
+        result = model.encode(text, show_progress_bar=False, convert_to_tensor=False).tolist()
+        logger.debug(f"BGE embedding dimension: {len(result)}")
+        return result
+    except Exception as e:
+        logger.error(f"Error in BGE embedder: {e}")
+        raise
 
 
 def instructor_xl(text: str) -> Embedding:
     """Embed text using Instructor XL model with GPU support."""
-    model = _load_instructor_xl()
-    # Instructor models expect instruction-based input
-    instruction = "Represent the document for retrieval: "
-    return model.encode([[instruction, text]], show_progress_bar=False, convert_to_tensor=False)[0].tolist()
+    try:
+        model = _load_instructor_xl()
+        # Instructor models expect instruction-based input
+        instruction = "Represent the document for retrieval: "
+        result = model.encode([[instruction, text]], show_progress_bar=False, convert_to_tensor=False)[0].tolist()
+        logger.debug(f"Instructor embedding dimension: {len(result)}")
+        return result
+    except Exception as e:
+        logger.error(f"Error in Instructor embedder: {e}")
+        raise
 
 
 def nomic_embed_text(text: str) -> Embedding:
     """Embed text using Nomic Embed Text model with GPU support."""
-    model = _load_nomic_embed_text()
-    return model.encode(text, show_progress_bar=False, convert_to_tensor=False).tolist()
+    try:
+        model = _load_nomic_embed_text()
+        result = model.encode(text, show_progress_bar=False, convert_to_tensor=False).tolist()
+        logger.debug(f"Nomic embedding dimension: {len(result)}")
+        return result
+    except Exception as e:
+        logger.error(f"Error in Nomic embedder: {e}")
+        raise
