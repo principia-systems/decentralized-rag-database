@@ -39,7 +39,9 @@ def embed(embeder_type: EmbedderType, input_text: str) -> Embedding:
     embedding_methods: Dict[str, EmbedderFunc] = {
         "openai": openai,
         "nvidia": nvidia,
-        "bge": bge
+        "bge": bge,
+        "bgelarge": bgelarge,
+        "e5large": e5large
     }
 
     return embedding_methods[embeder_type](text=input_text)
@@ -63,9 +65,35 @@ def nvidia(text: str) -> Embedding:
 @lru_cache(maxsize=1)
 def _load_bge() -> SentenceTransformer:
     model_name = "BAAI/bge-small-en"
-    return SentenceTransformer(model_name, device="cpu")
+    return SentenceTransformer(model_name, device="cuda")
 
 
 def bge(text: str) -> Embedding:
     model = _load_bge()
     return model.encode(text, show_progress_bar=False).tolist()
+
+
+@lru_cache(maxsize=1)
+def _load_bge_large() -> SentenceTransformer:
+    model_name = "BAAI/bge-large-en-v1.5"
+    return SentenceTransformer(model_name, device="cuda")
+
+
+def bgelarge(text: str) -> Embedding:
+    """Embed text using BGE Large model with 1024 dimensions. Returns a list."""
+    model = _load_bge_large()
+    return model.encode(text, show_progress_bar=False).tolist()
+
+
+@lru_cache(maxsize=1)
+def _load_e5_large() -> SentenceTransformer:
+    model_name = "intfloat/e5-large-v2"
+    return SentenceTransformer(model_name, device="cuda")
+
+
+def e5large(text: str) -> Embedding:
+    """Embed text using E5 Large model with 1024 dimensions. Returns a list."""
+    model = _load_e5_large()
+    # E5 models require passage prefix for documents
+    prefixed_text = f"passage: {text}"
+    return model.encode(prefixed_text, show_progress_bar=False).tolist()

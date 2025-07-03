@@ -142,7 +142,7 @@ class IngestGDriveRequest(BaseModel):
     )
     embedders: Optional[List[str]] = Field(
         default=["bge"], 
-        description="List of embedders to use (openai, nvidia, bge)"
+        description="List of embedders to use (openai, nvidia, bge, bgelarge, e5large)"
     )
     user_email: str
 
@@ -184,7 +184,7 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         # Validate component lists
         valid_converters = ["marker", "openai", "markitdown"]
         valid_chunkers = ["fixed_length", "recursive", "markdown_aware", "semantic_split"]
-        valid_embedders = ["openai", "nvidia", "bge"]
+        valid_embedders = ["openai", "nvidia", "bge", "bgelarge", "e5large"]
         
         # Validate requested components
         for converter in request.converters:

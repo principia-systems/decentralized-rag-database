@@ -158,7 +158,6 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
     config = load_config()
     
     # Process configuration
-    processing_config = config["processing"]
     author_config = config["author"]
     api_keys = config["api_keys"]
 

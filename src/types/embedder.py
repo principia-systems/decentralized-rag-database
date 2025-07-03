@@ -8,7 +8,9 @@ from typing import List, Literal, Callable
 EmbedderType = Literal[
     "openai", 
     "bge",
-    "nvidia"
+    "nvidia",
+    "bgelarge",
+    "e5large"
 ] 
 Embedding = List[float] 
 
