@@ -75,9 +75,9 @@ def embed(embeder_type: EmbedderType, input_text: str) -> Embedding:
 
     embedding_methods: Dict[str, EmbedderFunc] = {
         "openai": openai,
-        "bge": bge_large,
-        "nomic": nomic_embed_text,
-        "instructor": instructor_xl,
+        "bge": bge,
+        "nomic": nomic,
+        "instructor": instructor,
     }
 
     if embeder_type not in embedding_methods:
@@ -135,7 +135,7 @@ def _load_nomic_embed_text() -> SentenceTransformer:
             raise
 
 
-def bge_large(text: str) -> Embedding:
+def bge(text: str) -> Embedding:
     """Embed text using BGE large model with GPU support."""
     try:
         model = _load_bge_large()
@@ -147,7 +147,7 @@ def bge_large(text: str) -> Embedding:
         raise
 
 
-def instructor_xl(text: str) -> Embedding:
+def instructor(text: str) -> Embedding:
     """Embed text using Instructor XL model with GPU support."""
     try:
         model = _load_instructor_xl()
@@ -161,7 +161,7 @@ def instructor_xl(text: str) -> Embedding:
         raise
 
 
-def nomic_embed_text(text: str) -> Embedding:
+def nomic(text: str) -> Embedding:
     """Embed text using Nomic Embed Text model with GPU support."""
     try:
         model = _load_nomic_embed_text()
