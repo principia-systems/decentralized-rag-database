@@ -114,11 +114,20 @@ async def background_processing(
             # Use async lock to prevent concurrent database creation conflicts
             async with _db_creation_lock:
                 print(f"[HEAVY] Acquired lock for database creation: {user_email}")
-                # Run database creation directly in async context to avoid SQLite threading issues
-                create_user_database(user_email)
+                
+                # Add a small delay to ensure all file operations from processing are complete
+                await asyncio.sleep(2)
+                
+                # Run database creation in a thread executor to avoid blocking the async context
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, create_user_database, user_email)
+                
             print(f"[HEAVY] Successfully created database for user: {user_email}")
         except Exception as db_error:
             print(f"[HEAVY] Error creating user database: {str(db_error)}")
+            # Log the full error details for debugging
+            import traceback
+            print(f"[HEAVY] Full error traceback: {traceback.format_exc()}")
 
         print(f"[HEAVY] Background processing completed for {user_email}")
         
