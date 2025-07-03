@@ -53,9 +53,9 @@ def embed(embeder_type: EmbedderType, input_text: str) -> Embedding:
 
     embedding_methods: Dict[str, EmbedderFunc] = {
         "openai": openai,
-        "bge": bge,
-        "nomic": nomic,
-        "instructor": instructor,
+        "bge": bge_large,
+        "nomic": nomic_embed_text,
+        "instructor": instructor_xl,
     }
 
     if embeder_type not in embedding_methods:
@@ -100,13 +100,13 @@ def _load_nomic_embed_text() -> SentenceTransformer:
     return SentenceTransformer(model_name, device=device, trust_remote_code=True)
 
 
-def bge(text: str) -> Embedding:
+def bge_large(text: str) -> Embedding:
     """Embed text using BGE large model with GPU support."""
     model = _load_bge_large()
     return model.encode(text, show_progress_bar=False, convert_to_tensor=False).tolist()
 
 
-def instructor(text: str) -> Embedding:
+def instructor_xl(text: str) -> Embedding:
     """Embed text using Instructor XL model with GPU support."""
     model = _load_instructor_xl()
     # Instructor models expect instruction-based input
@@ -114,7 +114,7 @@ def instructor(text: str) -> Embedding:
     return model.encode([[instruction, text]], show_progress_bar=False, convert_to_tensor=False)[0].tolist()
 
 
-def nomic(text: str) -> Embedding:
+def nomic_embed_text(text: str) -> Embedding:
     """Embed text using Nomic Embed Text model with GPU support."""
     model = _load_nomic_embed_text()
     return model.encode(text, show_progress_bar=False, convert_to_tensor=False).tolist()

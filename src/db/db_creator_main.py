@@ -190,7 +190,7 @@ def create_user_database(user_email: str):
                 logger.error(f"Invalid database combination format: {db_combination}")
                 continue
             
-            # For combinations like "markitdown_fixed_length_bge", we need to parse carefully
+            # For combinations like "markitdown_fixed_length_bge-large", we need to parse carefully
             # The format should be: converter_chunker_embedder
             # If we have more than 3 parts, the middle parts belong to the chunker
             converter = parts[0]

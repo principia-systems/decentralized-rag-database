@@ -163,7 +163,7 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
     Args:
         converter: The converter to use (e.g., 'markitdown', 'marker', 'openai')
         chunker: The chunker to use (e.g., 'paragraph', 'sentence', 'word', 'fixed_length')
-        embedder: The embedder to use (e.g., 'openai', 'nvidia', 'bge')
+        embedder: The embedder to use (e.g., 'openai', 'bge', 'nomic', 'instructor')
         papers_list: List of paper file paths to process
         user_papers_dir: Path to the papers directory (user-specific)
         user_email: Email of the user for user-specific database path
