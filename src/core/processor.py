@@ -16,7 +16,7 @@ import requests
 
 from src.core.chunker import chunk
 from src.core.converter import convert
-from src.core.embedder import embed
+from src.core.embedder import embed, embed_batch
 from src.db.graph_db import IPFSNeo4jGraph
 from src.utils.logging_utils import get_logger, get_user_logger
 
@@ -297,7 +297,11 @@ class Processor:
             else:
                 chunked_text = self.chunk_cache[chunk_cache_key]
 
-            for _, chunk_i in enumerate(chunked_text):
+            # Step 2.2.1: Process all chunks and get their CIDs
+            chunk_cids = []
+            self.logger.info(f"Processing {len(chunked_text)} chunks...")
+            
+            for chunk_i in chunked_text:
                 self.__write_to_file(chunk_i, self.tmp_file_path)
 
                 chunk_text_ipfs_cid = self.__upload_text_to_lighthouse(self.tmp_file_path)
@@ -311,16 +315,20 @@ class Processor:
                 self.graph_db.create_relationship(
                     chunk_text_ipfs_cid, self.author_cid, "AUTHORED_BY"
                 )
-                # Step 2.3: Embedding
+                chunk_cids.append(chunk_text_ipfs_cid)
 
-                embedding = embed(embeder_type=embedder_func, input_text=chunk_i)
-
+            # Step 2.3: Batch Embedding
+            self.logger.info(f"Batch processing embeddings for {len(chunked_text)} chunks...")
+            embeddings = embed_batch(embeder_type=embedder_func, input_texts=chunked_text, batch_size=32, user_email=self.user_email)
+            
+            # Step 2.4: Create embedding relationships
+            for chunk_cid, embedding in zip(chunk_cids, embeddings):
                 self.__write_to_file(json.dumps(embedding), self.tmp_file_path)
 
                 embedding_ipfs_cid = self.__upload_text_to_lighthouse(self.tmp_file_path)
                 self.graph_db.add_ipfs_node(embedding_ipfs_cid)
                 self.graph_db.create_relationship(
-                    chunk_text_ipfs_cid,
+                    chunk_cid,
                     embedding_ipfs_cid,
                     "EMBEDDED_BY_" + embedder_func,
                 )
