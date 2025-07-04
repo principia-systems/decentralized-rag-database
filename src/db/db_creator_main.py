@@ -67,7 +67,7 @@ def create_user_database(user_email: str):
         user_email: Email of the user for creating user-specific database
     """
     # Create user-specific logger for this operation
-    user_logger = get_user_logger(user_email, "database_creation")
+    user_logger = get_user_logger(user_email, "c")
     
     # Load configuration
     config = load_config()

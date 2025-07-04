@@ -132,7 +132,21 @@ class Processor:
         try:
             if os.path.exists(mapping_file_path):
                 with open(mapping_file_path, "r") as file:
-                    return json.load(file)
+                    content = file.read().strip()
+                    if not content:
+                        self.logger.debug(f"Mappings file {mapping_file_path} is empty, returning empty dict")
+                        return {}
+                    return json.loads(content)
+            return {}
+        except json.JSONDecodeError as e:
+            self.logger.error(f"JSON decode error reading mappings from {mapping_file_path}: {e}")
+            # Return empty dict and try to fix the file
+            try:
+                with open(mapping_file_path, "w") as file:
+                    json.dump({}, file)
+                self.logger.info(f"Reset corrupted mappings file {mapping_file_path}")
+            except Exception as write_error:
+                self.logger.error(f"Failed to reset mappings file: {write_error}")
             return {}
         except Exception as e:
             self.logger.error(f"Error reading mappings from {mapping_file_path}: {e}")
@@ -232,10 +246,14 @@ class Processor:
             global_mappings_path = self.temp_dir / "mappings.json"
             global_mappings = self.__read_mappings(global_mappings_path)
             
+            self.logger.debug(f"Checking if {db_combination} already exists for PDF CID {metadata['pdf_ipfs_cid']}")
+            
             if metadata["pdf_ipfs_cid"] in global_mappings and db_combination in global_mappings[metadata["pdf_ipfs_cid"]]:
+                self.logger.info(f"Skipping {db_combination} - already processed for this PDF")
                 self.__update_mappings(metadata["pdf_ipfs_cid"], db_combination)
                 continue
 
+            self.logger.info(f"Processing new combination: {db_combination}")
 
             # Step 2.1: Conversion
             # Check if markdown conversion already exists for this PDF CID
@@ -287,15 +305,18 @@ class Processor:
                 )
 
             # Step 2.2: Chunking
+            self.logger.info(f"Starting chunking process for {converter_func}_{chunker_func}")
             converted_text = self.convert_cache[converter_func]
             chunk_cache_key = f"{converter_func}_{chunker_func}"
             if chunk_cache_key not in self.chunk_cache:
+                self.logger.debug(f"Chunking text with {chunker_func}")
                 chunked_text = chunk(
                     chunker_type=chunker_func, input_text=converted_text
                 )
                 self.chunk_cache[chunk_cache_key] = chunked_text
             else:
                 chunked_text = self.chunk_cache[chunk_cache_key]
+                self.logger.debug(f"Using cached chunks for {chunk_cache_key}")
 
             # Step 2.2.1: Process all chunks and get their CIDs
             chunk_cids = []
