@@ -9,6 +9,7 @@ import os
 from functools import lru_cache
 from typing import List, Dict
 
+import torch
 from dotenv import load_dotenv
 from openai import OpenAI
 from sentence_transformers import SentenceTransformer
@@ -60,7 +61,7 @@ def embed_batch(embeder_type: EmbedderType, input_texts: List[str], batch_size: 
 
 def openai_batch(texts: List[str], batch_size: int = 32, user_email: str = None) -> List[Embedding]:
     """Embed multiple texts using the OpenAI embedding API in batches."""
-    embed_logger = get_user_logger(user_email, "embedder.openai") if user_email else get_logger(__name__ + ".openai_batch")
+    embed_logger = get_user_logger(user_email, "embedder") if user_email else get_logger(__name__ + ".openai_batch")
     
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     
@@ -82,7 +83,7 @@ def openai_batch(texts: List[str], batch_size: int = 32, user_email: str = None)
 
 def nvidia_batch(texts: List[str], batch_size: int = 32, user_email: str = None) -> List[Embedding]:
     """Embed multiple texts using NVIDIA embeddings in batches."""
-    embed_logger = get_user_logger(user_email, "embedder.nvidia") if user_email else get_logger(__name__ + ".nvidia_batch")
+    embed_logger = get_user_logger(user_email, "embedder") if user_email else get_logger(__name__ + ".nvidia_batch")
     
     embed_logger.warning("NVIDIA embeddings not implemented yet")
     # Implementation not available yet
@@ -92,12 +93,13 @@ def nvidia_batch(texts: List[str], batch_size: int = 32, user_email: str = None)
 @lru_cache(maxsize=1)
 def _load_bge() -> SentenceTransformer:
     model_name = "BAAI/bge-small-en"
-    return SentenceTransformer(model_name, device="cuda")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    return SentenceTransformer(model_name, device=device)
 
 
 def bge_batch(texts: List[str], batch_size: int = 32, user_email: str = None) -> List[Embedding]:
     """Embed multiple texts using BGE model in batches."""
-    embed_logger = get_user_logger(user_email, "embedder.bge") if user_email else get_logger(__name__ + ".bge_batch")
+    embed_logger = get_user_logger(user_email, "embedder") if user_email else get_logger(__name__ + ".bge_batch")
     
     model = _load_bge()
     all_embeddings = []
@@ -118,12 +120,13 @@ def bge_batch(texts: List[str], batch_size: int = 32, user_email: str = None) ->
 @lru_cache(maxsize=1)
 def _load_bge_large() -> SentenceTransformer:
     model_name = "BAAI/bge-large-en-v1.5"
-    return SentenceTransformer(model_name, device="cuda")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    return SentenceTransformer(model_name, device=device)
 
 
 def bgelarge_batch(texts: List[str], batch_size: int = 32, user_email: str = None) -> List[Embedding]:
     """Embed multiple texts using BGE Large model in batches."""
-    embed_logger = get_user_logger(user_email, "embedder.bgelarge") if user_email else get_logger(__name__ + ".bgelarge_batch")
+    embed_logger = get_user_logger(user_email, "embedder") if user_email else get_logger(__name__ + ".bgelarge_batch")
     
     model = _load_bge_large()
     all_embeddings = []
@@ -144,12 +147,13 @@ def bgelarge_batch(texts: List[str], batch_size: int = 32, user_email: str = Non
 @lru_cache(maxsize=1)
 def _load_e5_large() -> SentenceTransformer:
     model_name = "intfloat/e5-large-v2"
-    return SentenceTransformer(model_name, device="cuda")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    return SentenceTransformer(model_name, device=device)
 
 
 def e5large_batch(texts: List[str], batch_size: int = 32, user_email: str = None) -> List[Embedding]:
     """Embed multiple texts using E5 Large model in batches."""
-    embed_logger = get_user_logger(user_email, "embedder.e5large") if user_email else get_logger(__name__ + ".e5large_batch")
+    embed_logger = get_user_logger(user_email, "embedder") if user_email else get_logger(__name__ + ".e5large_batch")
     
     model = _load_e5_large()
     all_embeddings = []
