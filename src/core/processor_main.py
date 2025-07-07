@@ -67,11 +67,6 @@ def test_processor():
     # Setup paths
     papers_directory = PROJECT_ROOT / processing_config["papers_directory"]
 
-    # Setup API keys and database connection
-    lighthouse_api_key = os.getenv(
-        api_keys["lighthouse_token"].replace("${", "").replace("}", "")
-    )
-
     # Get papers
     papers = [
         os.path.join(papers_directory, f)
@@ -94,7 +89,6 @@ def test_processor():
 
     processor = Processor(
         authorPublicKey=author_config["public_key"],
-        ipfs_api_key=lighthouse_api_key,
         user_email=author_config["email"],
         project_root=PROJECT_ROOT,
     )
@@ -164,11 +158,6 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
     # Setup paths
     papers_directory = Path(user_papers_dir)
 
-    # Setup API keys and database connection
-    lighthouse_api_key = os.getenv(
-        api_keys["lighthouse_token"].replace("${", "").replace("}", "")
-    )
-
     # Create database configuration for this specific combination
     db_config = {
         "converter": converter,
@@ -181,7 +170,6 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
 
     processor = Processor(
         authorPublicKey=author_config["public_key"],
-        ipfs_api_key=lighthouse_api_key,
         user_email=user_email,
         project_root=PROJECT_ROOT,
     )

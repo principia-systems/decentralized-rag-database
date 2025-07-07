@@ -55,7 +55,22 @@ OWNER_ADDRESS=
 PRIVATE_KEY=
 LIGHTHOUSE_TOKEN=
 OPENROUTER_API_KEY=
+GPU_SPLIT=0.75  # Optional: Percentage of GPUs to use for embedding (0.75 = 75%)
 ```
+
+#### GPU Configuration
+
+The `GPU_SPLIT` environment variable controls multi-GPU usage for local embedding models (BGE, E5):
+
+- **0.75** (default): Uses 75% of available GPUs, starting from the highest-numbered GPU
+- **1.0**: Uses all available GPUs  
+- **0.5**: Uses 50% of available GPUs
+- **Examples**:
+  - 4 GPUs with `GPU_SPLIT=0.75`: Uses GPUs 1, 2, 3 (skips GPU 0)
+  - 4 GPUs with `GPU_SPLIT=1.0`: Uses GPUs 0, 1, 2, 3
+  - 2 GPUs with `GPU_SPLIT=0.75`: Uses GPU 1
+  
+> **Note**: Multi-GPU acceleration applies only to local embedding models (`bge`, `bgelarge`, `e5large`). API-based models (`openai`, `nvidia`) are not affected.
 
 ### Running Modules
 

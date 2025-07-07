@@ -7,7 +7,6 @@ of scientific documents, including conversion, chunking, embedding, and storage.
 
 import json
 import os
-import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -27,7 +26,6 @@ class Processor:
     def __init__(
         self,
         authorPublicKey: str,
-        ipfs_api_key: str,
         user_email: str,
         project_root: Optional[Path] = None,
     ):
@@ -44,7 +42,7 @@ class Processor:
         self.logger = get_user_logger(user_email, "processor") if user_email else get_logger(__name__ + ".Processor")
         
         self.authorPublicKey = authorPublicKey  # Author Public Key
-        self.ipfs_api_key = ipfs_api_key  # IPFS API Key
+        self.ipfs_api_key = os.getenv("LIGHTHOUSE_TOKEN")
         self.convert_cache: Dict[str, str] = {}  # Cache for converted text
         self.chunk_cache: Dict[str, List[str]] = {}  # Cache for chunked text
         self.project_root = project_root or Path(__file__).parent.parent.parent
