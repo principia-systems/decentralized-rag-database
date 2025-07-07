@@ -120,7 +120,7 @@ def query_collection(collection_name, user_query, db_path=None, user_email=None)
         collection = client.get_collection(name=f"{collection_name}")
 
         # Generate embedding using the embedder module with the determined embedder_type
-        embedding = embed(embeder_type=embedder_type, input_text=user_query)
+        embedding = embed(embeder_type=embedder_type, input_text=user_query, user_email=user_email)
 
         values = collection.query(
             query_embeddings=[embedding],
