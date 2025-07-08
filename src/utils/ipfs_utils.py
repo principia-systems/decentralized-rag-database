@@ -37,13 +37,16 @@ class IPFSClient:
             self.gateway_url = "https://gateway.lighthouse.storage/ipfs"
             
         elif self.mode == 'local':
-            self.socket_path = socket_path or os.getenv('IPFS_SOCKET_PATH', '/tmp/ipfs.sock')
+            self.socket_path = socket_path or os.getenv('IPFS_SOCKET_PATH', '/root/.ipfs/api.sock')
             if not os.path.exists(self.socket_path):
                 raise ValueError(f"IPFS socket not found at {self.socket_path}")
-            # Create Unix socket session
-            self.session = requests_unixsocket.Session()
+            
+            # Follow the exact pattern from the user's working example
             encoded = urllib.parse.quote_plus(self.socket_path)
-            self.api_base = f"http+unix://{encoded}/api/v0"
+            self.base_url = f"http+unix://{encoded}/api/v0"
+            
+            # Create a session that speaks HTTP over UDS
+            self.session = requests_unixsocket.Session()
             self.gateway_url = os.getenv('IPFS_GATEWAY_URL', 'http://localhost:8080/ipfs')
             
         else:
@@ -68,7 +71,9 @@ class IPFSClient:
                 headers = {"Authorization": f"Bearer {self.api_key}"}
                 response = requests.post(self.api_url, headers=headers, files={'file': f})
             else:  # local mode
-                response = self.session.post(f"{self.api_base}/add?pin=true", files={'file': f})
+                # Follow the exact pattern from the user's working example
+                files = {'file': f}
+                response = self.session.post(f"{self.base_url}/add?pin=true", files=files)
             
             response.raise_for_status()
             return response.json()['Hash']
@@ -108,7 +113,8 @@ class IPFSClient:
             url = f"{self.gateway_url}/{cid}"
             response = requests.get(url)
         else:  # local mode
-            response = self.session.post(f"{self.api_base}/cat?arg={cid}")
+            # Follow the exact pattern from the user's working example
+            response = self.session.post(f"{self.base_url}/cat?arg={cid}")
         
         response.raise_for_status()
         return response.text if hasattr(response, 'text') else response.content.decode('utf-8')
