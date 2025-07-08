@@ -91,6 +91,18 @@ class IPFSClient:
                 "file": (filepath.name, file_content, "application/octet-stream")
             }
             logger.info(f"DEBUG: Making POST request to: {self.base_url}/add?pin=true")
+            logger.info(f"DEBUG: Session type: {type(self.session)}")
+            logger.info(f"DEBUG: Session object: {self.session}")
+            logger.info(f"DEBUG: Has session.post method: {hasattr(self.session, 'post')}")
+            
+            # Try a simple test first
+            try:
+                logger.info(f"DEBUG: Testing simple session connection")
+                test_response = self.session.post(f"{self.base_url}/version")
+                logger.info(f"DEBUG: Test response status: {test_response.status_code}")
+            except Exception as e:
+                logger.error(f"DEBUG: Test connection failed: {e}")
+            
             response = self.session.post(f"{self.base_url}/add?pin=true", files=files)
         
         response.raise_for_status()
