@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import certifi
-import requests
 
 from src.core.chunker import chunk
 from src.core.converter import convert

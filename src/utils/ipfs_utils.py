@@ -56,6 +56,7 @@ class IPFSClient:
             
             # Create a session that speaks HTTP over UDS
             self.ipfs_unix_session = requests_unixsocket.Session()
+            self.ipfs_unix_session.mount("http+unix://", requests_unixsocket.UnixAdapter())
             self.gateway_url = os.getenv('IPFS_GATEWAY_URL', 'http://localhost:8080/ipfs')
             logger.info(f"DEBUG: Local mode session created successfully")
             
