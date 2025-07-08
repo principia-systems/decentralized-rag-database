@@ -55,7 +55,7 @@ class IPFSClient:
             logger.info(f"DEBUG: Local mode base_url: {self.base_url}")
             
             # Create a session that speaks HTTP over UDS
-            self.session = requests_unixsocket.Session()
+            self.ipfs_unix_session = requests_unixsocket.Session()
             self.gateway_url = os.getenv('IPFS_GATEWAY_URL', 'http://localhost:8080/ipfs')
             logger.info(f"DEBUG: Local mode session created successfully")
             
@@ -91,19 +91,19 @@ class IPFSClient:
                 "file": (filepath.name, file_content, "application/octet-stream")
             }
             logger.info(f"DEBUG: Making POST request to: {self.base_url}/add?pin=true")
-            logger.info(f"DEBUG: Session type: {type(self.session)}")
-            logger.info(f"DEBUG: Session object: {self.session}")
-            logger.info(f"DEBUG: Has session.post method: {hasattr(self.session, 'post')}")
+            logger.info(f"DEBUG: Session type: {type(self.ipfs_unix_session)}")
+            logger.info(f"DEBUG: Session object: {self.ipfs_unix_session}")
+            logger.info(f"DEBUG: Has session.post method: {hasattr(self.ipfs_unix_session, 'post')}")
             
             # Try a simple test first
             try:
                 logger.info(f"DEBUG: Testing simple session connection")
-                test_response = self.session.post(f"{self.base_url}/version")
+                test_response = self.ipfs_unix_session.post(f"{self.base_url}/version")
                 logger.info(f"DEBUG: Test response status: {test_response.status_code}")
             except Exception as e:
                 logger.error(f"DEBUG: Test connection failed: {e}")
             
-            response = self.session.post(f"{self.base_url}/add?pin=true", files=files)
+            response = self.ipfs_unix_session.post(f"{self.base_url}/add?pin=true", files=files)
         
         response.raise_for_status()
         return response.json()['Hash']
@@ -144,7 +144,7 @@ class IPFSClient:
             response = requests.get(url)
         else:  # local mode
             # Follow the exact pattern from the user's working example
-            response = self.session.post(f"{self.base_url}/cat?arg={cid}")
+            response = self.ipfs_unix_session.post(f"{self.base_url}/cat?arg={cid}")
         
         response.raise_for_status()
         return response.text if hasattr(response, 'text') else response.content.decode('utf-8')
