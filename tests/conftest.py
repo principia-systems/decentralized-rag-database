@@ -86,29 +86,37 @@ def mock_openai_response():
     return mock_response
 
 
-@pytest.fixture
-def mock_environment_variables():
-    """Set up and tear down environment variables for testing."""
-    # Store original environment variables
-    original_values = {}
-    test_vars = {
+@pytest.fixture(scope="session")
+def test_env_vars():
+    """Set up test environment variables."""
+    env_vars = {
+        "NEO4J_URI": "bolt://localhost:7687",
+        "NEO4J_USERNAME": "neo4j",
+        "NEO4J_PASSWORD": "test_password",
         "OPENAI_API_KEY": "test_openai_key",
-        "NEO4J_URI": "bolt://test.neo4j.io:7687",
-        "NEO4J_USERNAME": "test_neo4j_user",
-        "NEO4J_PASSWORD": "test_neo4j_password",
         "LIGHTHOUSE_TOKEN": "test_lighthouse_token",
-        "SRC_LOG_LEVEL": "DEBUG",
+        "IPFS_MODE": "lighthouse",  # Set to lighthouse for tests
+        "CHROMA_PERSIST_DIR": "./test_chroma_db",
+        "POSTGRES_DB": "test_db",
+        "POSTGRES_USER": "test_user",
+        "POSTGRES_PASSWORD": "test_password",
+        "POSTGRES_HOST": "localhost",
+        "POSTGRES_PORT": "5432",
+        "DATABASE_URL": "postgresql://test_user:test_password@localhost:5432/test_db",
+        "ETH_NODE_URL": "http://localhost:8545",
+        "PRIVATE_KEY": "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "CONTRACT_ADDRESS": "0x0000000000000000000000000000000000000000",
     }
 
     # Save original values and set test values
-    for var, value in test_vars.items():
-        original_values[var] = os.environ.get(var)
+    for var, value in env_vars.items():
+        original_value = os.environ.get(var)
         os.environ[var] = value
 
-    yield test_vars
+    yield env_vars
 
     # Restore original values
-    for var, value in original_values.items():
+    for var, value in env_vars.items():
         if value is not None:
             os.environ[var] = value
         else:

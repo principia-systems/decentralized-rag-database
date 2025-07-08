@@ -17,6 +17,7 @@ from src.core.chunker import chunk
 from src.core.converter import convert
 from src.core.embedder import embed, embed_batch
 from src.db.graph_db import IPFSNeo4jGraph
+from src.utils.ipfs_utils import get_ipfs_client
 from src.utils.logging_utils import get_logger, get_user_logger
 
 
@@ -34,7 +35,6 @@ class Processor:
 
         Args:
             authorPublicKey: Public key of the author
-            ipfs_api_key: API key for Lighthouse IPFS
             user_email: Email of the user for creating user-specific folders
             project_root: Path to project root directory
         """
@@ -42,7 +42,10 @@ class Processor:
         self.logger = get_user_logger(user_email, "processor") if user_email else get_logger(__name__ + ".Processor")
         
         self.authorPublicKey = authorPublicKey  # Author Public Key
-        self.ipfs_api_key = os.getenv("LIGHTHOUSE_TOKEN")
+        
+        # Initialize IPFS client
+        self.ipfs_client = get_ipfs_client()
+        
         self.convert_cache: Dict[str, str] = {}  # Cache for converted text
         self.chunk_cache: Dict[str, List[str]] = {}  # Cache for chunked text
         self.project_root = project_root or Path(__file__).parent.parent.parent
@@ -75,34 +78,13 @@ class Processor:
 
         self.__write_to_file(self.authorPublicKey, str(self.tmp_file_path))
         self.logger.info(
-            f"Uploading author public key to Lighthouse: {self.authorPublicKey[:10]}..."
+            f"Uploading author public key to IPFS: {self.authorPublicKey[:10]}..."
         )
-        self.author_cid = self.__upload_text_to_lighthouse(
+        self.author_cid = self.ipfs_client.upload_file(
             str(self.tmp_file_path)
-        ).split("ipfs/")[-1]
+        )
         self.logger.info(f"Author CID: {self.author_cid}")
         self.graph_db.add_ipfs_node(self.author_cid)
-
-    def __upload_text_to_lighthouse(self, filename: str) -> str:
-        """Uploads a string as a file to Lighthouse IPFS and returns the IPFS hash (CID).
-
-        - content: The string content to be uploaded.
-        - filename: The name of the file for the uploaded content.
-        - Returns: IPFS hash (CID) of the uploaded file.
-        """
-        url = "https://node.lighthouse.storage/api/v0/add"
-
-        headers = {"Authorization": f"Bearer {self.ipfs_api_key}"}
-
-        with open(filename, "rb") as file:
-            files = {"file": file}
-            response = requests.post(url, headers=headers, files=files)
-
-        response.raise_for_status()
-
-        # Explicitly cast to string to satisfy type checker
-        hash_value: str = response.json()["Hash"]
-        return hash_value
 
     def __write_to_file(self, content: str, file_path: Union[str, Path]) -> None:
         """Writes the content to a file.
@@ -221,7 +203,7 @@ class Processor:
         }
 
         self.logger.info(f"Uploading PDF to IPFS: {pdf_path}")
-        metadata["pdf_ipfs_cid"] = self.__upload_text_to_lighthouse(pdf_path)
+        metadata["pdf_ipfs_cid"] = self.ipfs_client.upload_file(pdf_path)
 
         if not metadata["pdf_ipfs_cid"]:
             self.logger.error(f"Failed to upload PDF to IPFS: {pdf_path}")
@@ -229,9 +211,6 @@ class Processor:
 
         self.logger.info(f"Adding PDF CID to graph: {metadata['pdf_ipfs_cid']}")
         self.graph_db.add_ipfs_node(metadata["pdf_ipfs_cid"])
-        self.graph_db.create_relationship(
-            metadata["pdf_ipfs_cid"], self.author_cid, "AUTHORED_BY"
-        )
         
         for db_config in databases:
             
@@ -252,6 +231,9 @@ class Processor:
                 continue
 
             self.logger.info(f"Processing new combination: {db_combination}")
+
+            # Collect all nodes that need AUTHORED_BY relationships
+            all_authored_nodes = []
 
             # Step 2.1: Conversion
             # Check if markdown conversion already exists for this PDF CID
@@ -290,7 +272,7 @@ class Processor:
                 # Upload converted text to IPFS and commit to Git
                 self.__write_to_file(converted_text, self.tmp_file_path)
 
-                converted_text_ipfs_cid = self.__upload_text_to_lighthouse(self.tmp_file_path)
+                converted_text_ipfs_cid = self.ipfs_client.upload_file(self.tmp_file_path)
 
                 self.graph_db.add_ipfs_node(converted_text_ipfs_cid)
                 self.graph_db.create_relationship(
@@ -298,9 +280,7 @@ class Processor:
                     converted_text_ipfs_cid,
                     "CONVERTED_BY_" + converter_func,
                 )
-                self.graph_db.create_relationship(
-                    converted_text_ipfs_cid, self.author_cid, "AUTHORED_BY"
-                )
+                all_authored_nodes.append(converted_text_ipfs_cid)
 
             # Step 2.2: Chunking
             self.logger.info(f"Starting chunking process for {converter_func}_{chunker_func}")
@@ -323,37 +303,55 @@ class Processor:
             for chunk_i in chunked_text:
                 self.__write_to_file(chunk_i, self.tmp_file_path)
 
-                chunk_text_ipfs_cid = self.__upload_text_to_lighthouse(self.tmp_file_path)
-
-                self.graph_db.add_ipfs_node(chunk_text_ipfs_cid)
-                self.graph_db.create_relationship(
-                    converted_text_ipfs_cid,
-                    chunk_text_ipfs_cid,
-                    "CHUNKED_BY_" + chunker_func,
-                )
-                self.graph_db.create_relationship(
-                    chunk_text_ipfs_cid, self.author_cid, "AUTHORED_BY"
-                )
+                chunk_text_ipfs_cid = self.ipfs_client.upload_file(self.tmp_file_path)
                 chunk_cids.append(chunk_text_ipfs_cid)
+
+            # Batch add all chunk nodes to graph
+            self.logger.info(f"Adding {len(chunk_cids)} chunk nodes to graph...")
+            self.graph_db.add_ipfs_nodes_batch(chunk_cids)
+            
+            # Add chunk CIDs to authored nodes list
+            all_authored_nodes.extend(chunk_cids)
+            
+            # Create CHUNKED_BY relationships for chunks
+            chunk_relationships = []
+            for chunk_cid in chunk_cids:
+                chunk_relationships.append((converted_text_ipfs_cid, chunk_cid, f"CHUNKED_BY_{chunker_func}"))
+            
+            self.logger.info(f"Creating {len(chunk_relationships)} CHUNKED_BY relationships...")
+            self.graph_db.create_relationships_batch(chunk_relationships)
 
             # Step 2.3: Batch Embedding
             self.logger.info(f"Batch processing embeddings for {len(chunked_text)} chunks...")
             embeddings = embed_batch(embeder_type=embedder_func, input_texts=chunked_text, batch_size=32, user_email=self.user_email)
             
             # Step 2.4: Create embedding relationships
-            for chunk_cid, embedding in zip(chunk_cids, embeddings):
+            embedding_cids = []
+            for embedding in embeddings:
                 self.__write_to_file(json.dumps(embedding), self.tmp_file_path)
 
-                embedding_ipfs_cid = self.__upload_text_to_lighthouse(self.tmp_file_path)
-                self.graph_db.add_ipfs_node(embedding_ipfs_cid)
-                self.graph_db.create_relationship(
-                    chunk_cid,
-                    embedding_ipfs_cid,
-                    "EMBEDDED_BY_" + embedder_func,
-                )
-                self.graph_db.create_relationship(
-                    embedding_ipfs_cid, self.author_cid, "AUTHORED_BY"
-                )
+                embedding_ipfs_cid = self.ipfs_client.upload_file(self.tmp_file_path)
+                embedding_cids.append(embedding_ipfs_cid)
+            
+            # Batch add all embedding nodes to graph
+            self.logger.info(f"Adding {len(embedding_cids)} embedding nodes to graph...")
+            self.graph_db.add_ipfs_nodes_batch(embedding_cids)
+            
+            # Add embedding CIDs to authored nodes list
+            all_authored_nodes.extend(embedding_cids)
+            
+            # Create EMBEDDED_BY relationships for embeddings
+            embedding_relationships = []
+            for chunk_cid, embedding_cid in zip(chunk_cids, embedding_cids):
+                embedding_relationships.append((chunk_cid, embedding_cid, f"EMBEDDED_BY_{embedder_func}"))
+                
+            self.logger.info(f"Creating {len(embedding_relationships)} EMBEDDED_BY relationships...")
+            self.graph_db.create_relationships_batch(embedding_relationships)
+            
+            # Create all AUTHORED_BY relationships in one batch
+            authored_relationships = [(node_cid, self.author_cid, "AUTHORED_BY") for node_cid in all_authored_nodes]
+            self.logger.info(f"Creating {len(authored_relationships)} AUTHORED_BY relationships in one batch...")
+            self.graph_db.create_relationships_batch(authored_relationships)
                 
             self.__update_mappings(metadata["pdf_ipfs_cid"], db_combination)
         

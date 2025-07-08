@@ -11,6 +11,7 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
+from src.utils.ipfs_utils import get_ipfs_client
 from src.utils.logging_utils import get_logger, get_user_logger
 
 
@@ -38,6 +39,9 @@ class DatabaseCreator:
         self.vector_db_manager = vector_db_manager
         self.user_email = user_email
         
+        # Initialize IPFS client
+        self.ipfs_client = get_ipfs_client()
+        
         # Use user-specific logger if user_email is provided
         if user_email:
             self.logger = get_user_logger(user_email, "database_creator")
@@ -46,7 +50,7 @@ class DatabaseCreator:
 
     def query_lighthouse_for_embedding(self, cid):
         """
-        Query Lighthouse IPFS gateway for an embedding vector.
+        Query IPFS for an embedding vector.
 
         Args:
             cid: IPFS CID of the embedding
@@ -54,22 +58,17 @@ class DatabaseCreator:
         Returns:
             List representation of the embedding vector or None if retrieval fails
         """
-        url = f"https://gateway.lighthouse.storage/ipfs/{cid}"
         try:
-            response = requests.get(url)
-            response.raise_for_status()
-            embedding_vector = json.loads(response.text)
+            content = self.ipfs_client.get_content(cid)
+            embedding_vector = json.loads(content)
             return embedding_vector
         except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
             self.logger.error(f"Failed to retrieve embedding for CID {cid}: {e}")
             return None
 
     def query_ipfs_content(self, cid):
-        url = f"https://gateway.lighthouse.storage/ipfs/{cid}"
         try:
-            response = requests.get(url)
-            response.raise_for_status()
-            content = response.text
+            content = self.ipfs_client.get_content(cid)
             return content
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Failed to retrieve IPFS content for CID {cid}: {e}")

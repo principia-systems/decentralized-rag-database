@@ -6,11 +6,13 @@ and operations related to IPFS content identifiers (CIDs).
 """
 
 import os
+from typing import List, Tuple
 
 import certifi
 import requests
 from neo4j import GraphDatabase
 
+from src.utils.ipfs_utils import get_ipfs_client
 from src.utils.logging_utils import get_logger
 
 # Get module logger
@@ -43,6 +45,9 @@ class IPFSNeo4jGraph:
         self.password = password or os.getenv("NEO4J_PASSWORD")
 
         self.logger = get_logger(__name__ + ".IPFSNeo4jGraph")
+        
+        # Initialize IPFS client
+        self.ipfs_client = get_ipfs_client()
 
         if not all([self.uri, self.username, self.password]):
             missing = []
@@ -83,6 +88,23 @@ class IPFSNeo4jGraph:
         except Exception as e:
             self.logger.error(f"Failed to add node {cid}: {e}")
 
+    def add_ipfs_nodes_batch(self, cids: List[str]):
+        """Add multiple IPFS CIDs as nodes in Neo4j in a single transaction."""
+        if not cids:
+            return
+            
+        try:
+            with self.driver.session() as session:
+                # Use UNWIND to process multiple CIDs in one query
+                query = """
+                    UNWIND $cids AS cid
+                    MERGE (:IPFS {cid: cid})
+                """
+                session.run(query, cids=cids)
+                self.logger.info(f"Batch added {len(cids)} nodes")
+        except Exception as e:
+            self.logger.error(f"Failed to batch add nodes: {e}")
+
     def create_relationship(self, cid1, cid2, relationship_type="LINKS_TO"):
         """Create a relationship between two IPFS nodes (avoiding Cartesian Product)."""
         try:
@@ -100,6 +122,38 @@ class IPFSNeo4jGraph:
             self.logger.error(
                 f"Failed to create relationship {cid1} - [{relationship_type}] -> {cid2}: {e}"
             )
+
+    def create_relationships_batch(self, relationships: List[Tuple[str, str, str]]):
+        """
+        Create multiple relationships in a single transaction.
+        
+        Args:
+            relationships: List of tuples (source_cid, target_cid, relationship_type)
+        """
+        if not relationships:
+            return
+            
+        # Group relationships by type for more efficient querying
+        relationships_by_type = {}
+        for source, target, rel_type in relationships:
+            if rel_type not in relationships_by_type:
+                relationships_by_type[rel_type] = []
+            relationships_by_type[rel_type].append((source, target))
+        
+        try:
+            with self.driver.session() as session:
+                for rel_type, pairs in relationships_by_type.items():
+                    # Use UNWIND to process multiple relationships of the same type
+                    query = f"""
+                        UNWIND $pairs AS pair
+                        MERGE (a:IPFS {{cid: pair[0]}})
+                        MERGE (b:IPFS {{cid: pair[1]}})
+                        MERGE (a)-[:{rel_type}]->(b)
+                    """
+                    session.run(query, pairs=pairs)
+                    self.logger.info(f"Batch created {len(pairs)} relationships of type {rel_type}")
+        except Exception as e:
+            self.logger.error(f"Failed to batch create relationships: {e}")
 
     def query_graph(self):
         """Retrieve all nodes and relationships."""
@@ -220,12 +274,10 @@ class IPFSNeo4jGraph:
         :param cid: The IPFS CID.
         :return: The content of the IPFS file as a string.
         """
-        url = f"https://gateway.lighthouse.storage/ipfs/{cid}"
         try:
-            response = requests.get(url)
-            response.raise_for_status()
-            return response.text.strip()  # Ensure leading/trailing spaces are removed
-        except requests.exceptions.RequestException as e:
+            content = self.ipfs_client.get_content(cid)
+            return content.strip()  # Ensure leading/trailing spaces are removed
+        except Exception as e:
             self.logger.error(f"Failed to retrieve IPFS content for CID {cid}: {e}")
             return None
 

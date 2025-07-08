@@ -23,6 +23,7 @@ class TestProcessorIntegration:
                 "NEO4J_USERNAME": "mock_neo4j_username",
                 "NEO4J_PASSWORD": "mock_neo4j_password",
                 "LIGHTHOUSE_TOKEN": "mock_lighthouse_token",
+                "IPFS_MODE": "lighthouse",  # Set IPFS mode for tests
             },
         ):
             yield

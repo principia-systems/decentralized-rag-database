@@ -1,13 +1,21 @@
 """
-Utility functions module.
+Utility functions for the src package.
 
-This module provides various utility functions for file handling, logging, and more.
+This module provides various utility functions used across the src package.
 """
 
-from src.utils.logging_utils import get_logger
+from src.utils.ipfs_utils import IPFSClient, get_ipfs_client, upload_to_lighthouse
 from src.utils.utils import (
     compress,
     download_from_url,
-    extract,
-    upload_to_lighthouse,
-)
+    extract
+    )
+
+__all__ = [
+    "compress",
+    "download_from_url",
+    "extract",
+    "upload_to_lighthouse",
+    "IPFSClient",
+    "get_ipfs_client",
+]

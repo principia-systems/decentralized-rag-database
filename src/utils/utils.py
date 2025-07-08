@@ -56,19 +56,6 @@ def extract(tar_file_path: Union[str, Path], output_path: Union[str, Path]):
     tar_path.unlink()
 
 
-def upload_to_lighthouse(filepath: Union[str, Path], ipfs_api_key: str) -> str:
-    """Uploads a file to Lighthouse IPFS and returns the gateway url, via the file CID."""
-    url = "https://node.lighthouse.storage/api/v0/add"
-    headers = {"Authorization": f"Bearer {ipfs_api_key}"}
-    with open(str(filepath), "rb") as file:
-        files = {"file": file}
-        print(f"Uploading {filepath} to Lighthouse IPFS...")
-        response = requests.post(url, headers=headers, files=files)
-        response.raise_for_status()
-    cid = response.json()["Hash"]
-    return f"https://gateway.lighthouse.storage/ipfs/{cid}"
-
-
 def download_from_url(url: str, output_folder: Union[str, Path] = "./tmp"):
     """Downloads a file from a given URL and saves it to the specified output path."""
     # Ensure the output folder exists

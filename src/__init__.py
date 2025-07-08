@@ -1,42 +1,46 @@
 """
-src package for scientific document processing and storage.
+Core module for document processing and knowledge graph management.
 
-This package provides tools for processing, chunking, embedding, and
-storing scientific documents in various database systems.
+This module provides a unified interface for processing scientific documents,
+managing knowledge graphs, and handling database operations.
 """
 
-# Import submodules to make them available
-import src.core
-import src.db
-import src.query
-import src.rewards
-import src.utils
-from src.core.chunker import chunk, chunk_from_url
+from src.core.chunker import chunk
 from src.core.converter import convert
-from src.core.embedder import embed, embed_from_url
-
-# Core functionality
+from src.core.embedder import embed
 from src.core.processor import Processor
 from src.db.chroma_client import VectorDatabaseManager
+from src.db.db_creator import DatabaseCreator
 from src.db.graph_db import IPFSNeo4jGraph
-
-# Database connectors
-from src.db.postgres_db import PostgresDBManager
-from src.query.evaluation_agent import EvaluationAgent
-
-# Query functionality
-from src.query.query_db import query_collection
-
-# Reward system
+from src.query.query_db import discover_user_collections, query_collection
 from src.rewards.token_rewarder import TokenRewarder
-from src.utils.logging_utils import get_logger
-
-# Utility functions
-from src.utils.utils import (
+from src.utils import (
+    IPFSClient,
     compress,
     download_from_url,
     extract,
-    upload_to_lighthouse,
+    get_ipfs_client,
 )
 
-__version__ = "0.1.0"
+__all__ = [
+    # Core functions
+    "chunk",
+    "convert",
+    "embed",
+    "Processor",
+    # Database classes
+    "VectorDatabaseManager",
+    "DatabaseCreator",
+    "IPFSNeo4jGraph",
+    # Query functions
+    "discover_user_collections",
+    "query_collection",
+    # Reward system
+    "TokenRewarder",
+    # Utilities
+    "compress",
+    "download_from_url",
+    "extract",
+    "IPFSClient",
+    "get_ipfs_client",
+]
