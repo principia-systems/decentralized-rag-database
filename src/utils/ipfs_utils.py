@@ -96,14 +96,6 @@ class IPFSClient:
             logger.info(f"DEBUG: Session object: {self.ipfs_unix_session}")
             logger.info(f"DEBUG: Has session.post method: {hasattr(self.ipfs_unix_session, 'post')}")
             
-            # Try a simple test first
-            try:
-                logger.info(f"DEBUG: Testing simple session connection")
-                test_response = self.ipfs_unix_session.post(f"{self.base_url}/version")
-                logger.info(f"DEBUG: Test response status: {test_response.status_code}")
-            except Exception as e:
-                logger.error(f"DEBUG: Test connection failed: {e}")
-            
             response = self.ipfs_unix_session.post(f"{self.base_url}/add?pin=true", files=files)
         
         response.raise_for_status()
