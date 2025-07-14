@@ -171,6 +171,7 @@ test-results/
 test-output/
 test_output/
 /temp
+/storage
 /tmp
 /mock_*
 tests/**/reports/

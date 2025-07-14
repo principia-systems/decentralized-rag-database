@@ -10,6 +10,9 @@ import logging
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import os
+from datetime import datetime
+from typing import Dict, Any
+import uuid
 
 # Import your entry points
 from src.query.evaluation_agent import EvaluationAgent
@@ -90,6 +93,23 @@ class EmailValidationResponse(BaseModel):
 class ResearchScrapeRequest(BaseModel):
     research_area: str
     user_email: str
+
+class EvaluationOption(BaseModel):
+    id: str
+    content: str
+    collection_name: Optional[str] = None
+    score: Optional[int] = None  # For scoring mode
+    rank: Optional[int] = None   # For ranking mode
+
+class StoreEvaluationRequest(BaseModel):
+    user_email: str
+    query: str
+    mode: str  # "manual", "scoring", or "ranking"
+    options: List[EvaluationOption]
+    selected_option_id: str
+    chat_id: Optional[str] = None
+    timestamp: Optional[float] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 def load_whitelisted_emails() -> set:
     """Load whitelisted emails from the file"""
@@ -252,6 +272,127 @@ async def get_user_status(user_email: str):
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "light"}
+
+@app.post("/api/evaluation/store")
+async def store_evaluation(request: StoreEvaluationRequest):
+    """Store evaluation data for analysis"""
+    # Create user-specific logger for this request
+    user_logger = get_user_logger(request.user_email, "evaluation_storage")
+    
+    try:
+        # Create storage directory if it doesn't exist
+        storage_dir = PROJECT_ROOT / "storage"
+        storage_dir.mkdir(exist_ok=True)
+        
+        # Determine which file to use based on mode
+        mode_to_file = {
+            "manual": "manual_evaluations.json",
+            "scoring": "scoring_evaluations.json", 
+            "ranking": "ranking_evaluations.json"
+        }
+        
+        if request.mode not in mode_to_file:
+            raise HTTPException(status_code=400, detail=f"Invalid mode: {request.mode}")
+        
+        file_path = storage_dir / mode_to_file[request.mode]
+        
+        # Create evaluation record with appropriate schema
+        evaluation_record = {
+            "id": str(uuid.uuid4()),
+            "timestamp": request.timestamp or datetime.utcnow().timestamp(),
+            "user_email": request.user_email,
+            "chat_id": request.chat_id,
+            "query": request.query,
+            "mode": request.mode,
+            "selected_option_id": request.selected_option_id,
+            "options": []
+        }
+        
+        # Format options based on mode
+        for option in request.options:
+            option_data = {
+                "id": option.id,
+                "content": option.content,  # Truncate long content
+                "collection_name": option.collection_name
+            }
+            
+            if request.mode == "scoring" and option.score is not None:
+                option_data["score"] = option.score
+            elif request.mode == "ranking" and option.rank is not None:
+                option_data["rank"] = option.rank
+                
+            evaluation_record["options"].append(option_data)
+        
+        # Add metadata if provided
+        if request.metadata:
+            evaluation_record["metadata"] = request.metadata
+        
+        # Load existing data or create new list
+        evaluations = []
+        if file_path.exists():
+            try:
+                with open(file_path, 'r') as f:
+                    evaluations = json.load(f)
+            except json.JSONDecodeError:
+                user_logger.warning(f"Could not parse existing file {file_path}, starting fresh")
+                evaluations = []
+        
+        # Append new evaluation
+        evaluations.append(evaluation_record)
+        
+        # Write back to file
+        with open(file_path, 'w') as f:
+            json.dump(evaluations, f, indent=2)
+        
+        user_logger.info(f"Stored {request.mode} evaluation for user {request.user_email}")
+        
+        return {
+            "success": True,
+            "evaluation_id": evaluation_record["id"],
+            "message": f"Evaluation stored successfully in {mode_to_file[request.mode]}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        user_logger.error(f"Error storing evaluation: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error storing evaluation: {str(e)}")
+
+@app.get("/api/evaluation/stats")
+async def get_evaluation_stats(user_email: str):
+    """Get evaluation statistics for a user"""
+    # Create user-specific logger for this request
+    user_logger = get_user_logger(user_email, "evaluation_stats")
+    
+    try:
+        storage_dir = PROJECT_ROOT / "storage"
+        stats = {
+            "manual": 0,
+            "scoring": 0,
+            "ranking": 0,
+            "total": 0
+        }
+        
+        # Count evaluations for each mode
+        for mode, filename in [("manual", "manual_evaluations.json"), 
+                               ("scoring", "scoring_evaluations.json"), 
+                               ("ranking", "ranking_evaluations.json")]:
+            file_path = storage_dir / filename
+            if file_path.exists():
+                try:
+                    with open(file_path, 'r') as f:
+                        evaluations = json.load(f)
+                        user_evaluations = [e for e in evaluations if e.get("user_email") == user_email]
+                        stats[mode] = len(user_evaluations)
+                        stats["total"] += len(user_evaluations)
+                except Exception as e:
+                    user_logger.warning(f"Could not read {filename}: {e}")
+        
+        return stats
+        
+    except Exception as e:
+        user_logger.error(f"Error getting evaluation stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting evaluation stats: {str(e)}")
 
 if __name__ == '__main__':
     import uvicorn
