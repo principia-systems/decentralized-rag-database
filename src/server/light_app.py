@@ -90,6 +90,15 @@ class EmailValidationRequest(BaseModel):
 class EmailValidationResponse(BaseModel):
     isValid: bool
 
+class AddEmailRequest(BaseModel):
+    email: EmailStr
+    admin_key: str  # Simple admin key for security
+
+class AddEmailResponse(BaseModel):
+    success: bool
+    message: str
+    email: str
+
 class ResearchScrapeRequest(BaseModel):
     research_area: str
     user_email: str
@@ -140,6 +149,36 @@ async def validate_email(request: EmailValidationRequest):
     except Exception as e:
         user_logger.error(f"Error validating email: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error validating email: {str(e)}")
+
+@app.post("/api/auth/add-email", response_model=AddEmailResponse)
+async def add_email_to_whitelist(request: AddEmailRequest):
+    """Add an email to the whitelist (requires admin key)"""
+    # Create user-specific logger for this request
+    user_logger = get_user_logger(request.email, "add_email")
+    
+    try:
+        # In a real application, you would validate the admin_key
+        # For this example, we'll just check if it's not empty
+        if not request.admin_key or request.admin_key != os.getenv("ADMIN_KEY"):
+            raise HTTPException(status_code=401, detail="Invalid admin key")
+
+        whitelisted_emails = load_whitelisted_emails()
+        email = request.email.lower()
+        
+        if email in whitelisted_emails:
+            return AddEmailResponse(success=False, message=f"Email {email} is already whitelisted.", email=email)
+        
+        # Append the new email to the file instead of overwriting
+        with open(WHITELIST_PATH, 'a') as f:
+            f.write(f"\n{email}")
+        
+        user_logger.info(f"Email {email} added to whitelist.")
+        return AddEmailResponse(success=True, message=f"Email {email} added to whitelist.", email=email)
+    except HTTPException:
+        raise
+    except Exception as e:
+        user_logger.error(f"Error adding email to whitelist: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error adding email to whitelist: {str(e)}")
 
 @app.post("/api/research/scrape")
 async def scrape_research_papers(request: ResearchScrapeRequest, background_tasks: BackgroundTasks):
