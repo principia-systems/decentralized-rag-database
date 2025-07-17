@@ -7,6 +7,7 @@ using various methods including OpenAI's API and local tools.
 
 import os
 import textwrap
+import threading
 from typing import List, Optional, Dict
 
 import PyPDF2
@@ -24,8 +25,16 @@ from src.utils.utils import download_from_url, extract
 # Get module logger
 logger = get_logger(__name__)
 
-
 load_dotenv(override=True)
+
+# Global lock to prevent concurrent marker model loading
+_marker_lock = threading.Lock()
+_marker_models = None
+_marker_converter = None
+
+# Global lock to prevent concurrent markitdown model loading
+_markitdown_lock = threading.Lock()
+_markitdown_instance = None
 
 
 def convert_from_url(conversion_type: ConverterType, input_url: str, user_temp_dir: str = "./tmp") -> str:
@@ -60,7 +69,8 @@ def chunk_text(text: str, chunk_size: int = 4000) -> List[str]:
 
 def marker(input_path: str) -> str:
     """Convert text using the marker module, where input_path is either a path to pdf file or a path to a folder containing a set of pdf files."""
-    pass
+    global _marker_models, _marker_converter
+    
     try:
         # Ensure the input_path is a valid file
         if not os.path.exists(input_path):
@@ -85,26 +95,34 @@ def marker(input_path: str) -> str:
         else:
             raise ValueError(f"Invalid input path: {input_path}")
 
-        models = create_model_dict()
-        config_parser = ConfigParser(
-            {
-                "languages": "en",
-                "output_format": "markdown",
-            }
-        )
-
-        converter = PdfConverter(
-            config=config_parser.generate_config_dict(),
-            artifact_dict=models,
-            processor_list=config_parser.get_processors(),
-            renderer=config_parser.get_renderer(),
-        )
-
         std_out = ""
-        for pdf_path in input_pdf_paths:
-            rendered = converter(pdf_path)
-            rendered_markdown = rendered.markdown
-            std_out += rendered_markdown
+        
+        # Use thread-safe model loading and conversion
+        with _marker_lock:
+            if _marker_models is None or _marker_converter is None:
+                logger.info("Loading marker models (this may take a moment)...")
+                _marker_models = create_model_dict()
+                config_parser = ConfigParser(
+                    {
+                        "languages": "en",
+                        "output_format": "markdown",
+                    }
+                )
+                _marker_converter = PdfConverter(
+                    config=config_parser.generate_config_dict(),
+                    artifact_dict=_marker_models,
+                    processor_list=config_parser.get_processors(),
+                    renderer=config_parser.get_renderer(),
+                )
+                logger.info("Marker models loaded successfully")
+            
+            # Use the cached converter - now conversion happens inside the lock
+            converter = _marker_converter
+            
+            for pdf_path in input_pdf_paths:
+                rendered = converter(pdf_path)
+                rendered_markdown = rendered.markdown
+                std_out += rendered_markdown
 
         return std_out
 
@@ -166,6 +184,8 @@ def openai(input_path: str) -> str:
 
 def markitdown(input_path: str) -> str:
     """Convert PDF to Markdown using the Microsoft MarkItDown library."""
+    global _markitdown_instance
+    
     try:
         # Ensure the input_path is a valid file
         if not os.path.exists(input_path):
@@ -184,11 +204,20 @@ def markitdown(input_path: str) -> str:
         else:
             raise ValueError(f"Invalid input path: {input_path}")
 
-        md = MarkItDown(enable_plugins=False)
-
-        logger.info(f"Converting {input_pdf_path} using MarkItDown")
-        result = md.convert(input_pdf_path)
-        return result.text_content.strip()
+        # Use thread-safe model loading and conversion
+        with _markitdown_lock:
+            if _markitdown_instance is None:
+                logger.info("Loading MarkItDown instance (this may take a moment)...")
+                _markitdown_instance = MarkItDown(enable_plugins=False)
+                logger.info("MarkItDown instance loaded successfully")
+            
+            # Use the cached instance
+            md = _markitdown_instance
+            
+            # Perform conversion inside the lock
+            logger.info(f"Converting {input_pdf_path} using MarkItDown")
+            result = md.convert(input_pdf_path)
+            return result.text_content.strip()
 
     except FileNotFoundError as e:
         logger.error(f"File not found: {e}")
