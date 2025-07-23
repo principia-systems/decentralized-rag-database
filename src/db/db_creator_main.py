@@ -76,6 +76,8 @@ def create_user_database(user_email: str):
         uri=neo4j_uri, username=neo4j_username, password=neo4j_password
     )
 
+    user_logger.info(f"Neo4j graph initialized with URI: {neo4j_uri}")
+
     # Look for user-specific mappings file
     user_temp_path = PROJECT_ROOT / "temp" / user_email
     mappings_file_path = user_temp_path / "mappings.json"
@@ -89,14 +91,6 @@ def create_user_database(user_email: str):
     # Load mappings
     with open(mappings_file_path, "r") as file:
         mappings = json.load(file)
-    
-    # Load job tracking from global jobs.json (thread-safe)
-    from src.utils.file_lock import load_jobs_safe
-    jobs = load_jobs_safe()
-    
-    if user_email not in jobs:
-        user_logger.error(f"No job tracking found for user {user_email}")
-        return
 
     if not mappings:
         user_logger.warning(f"Empty mappings file for user {user_email}")
