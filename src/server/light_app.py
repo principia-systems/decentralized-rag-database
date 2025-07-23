@@ -2,7 +2,7 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Dict
 import json
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,13 +13,14 @@ import os
 from datetime import datetime
 from typing import Dict, Any
 import uuid
+import requests
 
 # Import your entry points
-from src.query.evaluation_agent import EvaluationAgent
 from src.scraper.openalex_scraper import OpenAlexScraper
 from src.scraper.config import ScraperConfig
 from src.utils.logging_utils import get_user_logger
 from src.utils.file_lock import load_jobs_safe
+from src.utils.ipfs_utils import get_ipfs_client
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -69,13 +70,6 @@ def cleanup_zip_file(zip_path: str):
         system_logger.warning(f"Error cleaning up zip file {zip_path}: {e}")
 
 # Define request/response models
-class EvaluationRequest(BaseModel):
-    query: str
-    collections: Optional[List[str]] = None  # If None, auto-discovers collections
-    db_path: Optional[str] = None
-    model_name: str = "openai/gpt-4o-mini"
-    user_email: str
-
 class UserStatusResponse(BaseModel):
     user_email: str
     total_papers: int
@@ -119,6 +113,17 @@ class StoreEvaluationRequest(BaseModel):
     chat_id: Optional[str] = None
     timestamp: Optional[float] = None
     metadata: Optional[Dict[str, Any]] = None
+
+class BatchRetrievalRequest(BaseModel):
+    embedding_cids: List[str]
+    content_cids: List[str]
+    user_email: str
+
+class BatchRetrievalResponse(BaseModel):
+    embeddings: Dict[str, List]  # CID -> embedding vector
+    contents: Dict[str, str]     # CID -> content string
+    failed_embeddings: List[str]  # CIDs that failed to retrieve
+    failed_contents: List[str]    # CIDs that failed to retrieve
 
 def load_whitelisted_emails() -> set:
     """Load whitelisted emails from the file"""
@@ -244,46 +249,56 @@ async def scrape_research_papers(request: ResearchScrapeRequest, background_task
         user_logger.error(error_msg)
         raise HTTPException(status_code=500, detail=error_msg)
 
-@app.post("/api/evaluate")
-async def evaluate_endpoint(request: EvaluationRequest):
-    """Endpoint for evaluation - fast queries"""
+
+@app.post("/api/ipfs/batch-retrieve", response_model=BatchRetrievalResponse)
+async def batch_retrieve_ipfs_data(request: BatchRetrievalRequest):
+    """Batch retrieve embeddings and content from IPFS"""
     # Create user-specific logger for this request
-    user_logger = get_user_logger(request.user_email, "evaluation")
+    user_logger = get_user_logger(request.user_email, "batch_retrieve")
     
     try:
-        user_logger.info(f"Evaluating query: {request.query}")
-        user_logger.debug(f"DB Path: {request.db_path}")
-        user_logger.debug(f"Model Name: {request.model_name}")
-        user_logger.info(f"User Email: {request.user_email}")
+        ipfs_client = get_ipfs_client()
         
-        # Construct user-specific database path if not provided
-        if request.db_path is None:
-            base_db_path = PROJECT_ROOT / "src" / "database" / request.user_email
-            user_db_path = str(base_db_path)
-        else:
-            user_db_path = request.db_path
+        # Initialize response data
+        embeddings = {}
+        contents = {}
+        failed_embeddings = []
+        failed_contents = []
         
-        user_logger.info(f"Using database path: {user_db_path}")
+        user_logger.info(f"Starting batch retrieval for {len(request.embedding_cids)} embeddings and {len(request.content_cids)} contents")
         
-        # Initialize evaluation agent
-        agent = EvaluationAgent(model_name=request.model_name)
-
-        # Run query on collections with user-specific database path
-        results_file = agent.query_collections(
-            query=request.query,
-            db_path=user_db_path,
-            user_email=request.user_email,
+        # Retrieve embeddings
+        for cid in request.embedding_cids:
+            try:
+                content = ipfs_client.get_content(cid)
+                embedding_vector = json.loads(content)
+                embeddings[cid] = embedding_vector
+            except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+                user_logger.error(f"Failed to retrieve embedding for CID {cid}: {e}")
+                failed_embeddings.append(cid)
+        
+        # Retrieve contents
+        for cid in request.content_cids:
+            try:
+                content = ipfs_client.get_content(cid)
+                contents[cid] = content
+            except requests.exceptions.RequestException as e:
+                user_logger.error(f"Failed to retrieve content for CID {cid}: {e}")
+                failed_contents.append(cid)
+        
+        user_logger.info(f"Successfully retrieved {len(embeddings)}/{len(request.embedding_cids)} embeddings and {len(contents)}/{len(request.content_cids)} contents")
+        
+        return BatchRetrievalResponse(
+            embeddings=embeddings,
+            contents=contents,
+            failed_embeddings=failed_embeddings,
+            failed_contents=failed_contents
         )
         
-        # Read the results from the JSON file
-        with open(results_file, 'r') as f:
-            results = json.load(f)
-        
-        user_logger.info(f"Successfully completed evaluation query")
-        return results
     except Exception as e:
-        user_logger.error(f"Error in evaluation: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        user_logger.error(f"Error in batch retrieval: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Batch retrieval failed: {str(e)}")
+    
 
 @app.get("/api/status")
 async def get_user_status(user_email: str):

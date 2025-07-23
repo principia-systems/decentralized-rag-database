@@ -47,17 +47,6 @@ def load_config():
         raise
 
 
-def increment_job_progress(user_email, increment=1):
-    """Increment completed job count for user - using thread-safe implementation"""
-
-    # Create user-specific logger for this operation
-    user_logger = get_user_logger(user_email, "job_progress")
-
-    success = increment_job_progress_safe(user_email, increment)
-    if not success:
-        user_logger.error(f"Failed to increment job progress for {user_email}")
-
-
 
 def create_user_database(user_email: str):
     """
@@ -110,10 +99,6 @@ def create_user_database(user_email: str):
     if user_email not in jobs:
         user_logger.error(f"No job tracking found for user {user_email}")
         return
-        
-    total_jobs = jobs[user_email][0]
-    completed_jobs = jobs[user_email][1]
-    remaining_jobs = total_jobs - completed_jobs
 
     if not mappings:
         user_logger.warning(f"Empty mappings file for user {user_email}")
@@ -146,17 +131,6 @@ def create_user_database(user_email: str):
             if new_combinations:
                 items_to_process[pdf_cid] = new_combinations
 
-    # Calculate how many items we need to process vs already processed
-    number_items_to_process = sum(len(combos) for combos in items_to_process.values())
-    already_processed_increment = remaining_jobs - number_items_to_process
-    
-    user_logger.info(f"DB Creator: remaining_jobs={remaining_jobs}, items_to_process={number_items_to_process}")
-    user_logger.info(f"DB Creator: Incrementing by {already_processed_increment} for already processed items")
-    
-    # Increment for already processed DB creator work
-    if already_processed_increment > 0:
-        increment_job_progress(user_email, already_processed_increment)
-
     if not items_to_process:
         user_logger.info("No new items to process. All mappings are already embedded.")
         return
@@ -179,7 +153,13 @@ def create_user_database(user_email: str):
 
     # Initialize database manager with the specific db names found in mappings
     vector_db_manager = VectorDatabaseManager(list(db_names), db_path=str(user_db_path))
-    create_db = DatabaseCreator(graph, vector_db_manager, user_email)
+    
+    # Get light server URL from config if available
+    light_server_url = None
+    if "light_server" in config and "url" in config["light_server"]:
+        light_server_url = os.getenv(config["light_server"]["url"].replace("${", "").replace("}", ""))
+    
+    create_db = DatabaseCreator(graph, vector_db_manager, user_email, light_server_url)
 
     # Process only the new CID-database combinations
     total_processed = 0
@@ -216,10 +196,8 @@ def create_user_database(user_email: str):
                 create_db.process_paths(pdf_cid, relationship_path, db_combination)
                 successfully_processed[pdf_cid].append(db_combination)
                 total_processed += 1
-                increment_job_progress(user_email, 1)
             except Exception as e:
                 user_logger.error(f"Error processing {pdf_cid} with {db_combination}: {e}")
-                increment_job_progress(user_email, 1)
                 successfully_processed[pdf_cid].append(db_combination)
                 continue
 
