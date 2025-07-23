@@ -12,7 +12,6 @@ import os
 import requests
 from dotenv import load_dotenv
 
-from src.utils.ipfs_utils import get_ipfs_client
 from src.utils.logging_utils import get_logger, get_user_logger
 
 
@@ -35,47 +34,17 @@ class DatabaseCreator:
             graph: IPFSNeo4jGraph instance for graph database operations
             vector_db_manager: VectorDatabaseManager instance for vector database operations
             user_email: Optional user email for user-specific logging
-            light_server_url: URL of the light server for batch retrieval
         """
         self.graph = graph
         self.vector_db_manager = vector_db_manager
         self.user_email = user_email
         self.light_server_url = os.getenv('LIGHT_SERVER_URL', 'http://localhost:5001')
         
-        # Initialize IPFS client
-        self.ipfs_client = get_ipfs_client()
-        
         # Use user-specific logger if user_email is provided
         if user_email:
             self.logger = get_user_logger(user_email, "database_creator")
         else:
             self.logger = get_logger(__name__ + ".DatabaseCreator")
-
-    def query_lighthouse_for_embedding(self, cid):
-        """
-        Query IPFS for an embedding vector.
-
-        Args:
-            cid: IPFS CID of the embedding
-
-        Returns:
-            List representation of the embedding vector or None if retrieval fails
-        """
-        try:
-            content = self.ipfs_client.get_content(cid)
-            embedding_vector = json.loads(content)
-            return embedding_vector
-        except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
-            self.logger.error(f"Failed to retrieve embedding for CID {cid}: {e}")
-            return None
-
-    def query_ipfs_content(self, cid):
-        try:
-            content = self.ipfs_client.get_content(cid)
-            return content
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Failed to retrieve IPFS content for CID {cid}: {e}")
-            return None
 
     def batch_retrieve_data(self, embedding_cids, content_cids):
         """

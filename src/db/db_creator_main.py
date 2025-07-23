@@ -16,8 +16,6 @@ from dotenv import load_dotenv
 from src.db.chroma_client import VectorDatabaseManager
 from src.db.db_creator import DatabaseCreator
 from src.db.graph_db import IPFSNeo4jGraph
-from src.utils.logging_utils import get_logger
-from src.utils.file_lock import increment_job_progress_safe
 from src.utils.logging_utils import get_logger, get_user_logger
 
 # Get module logger

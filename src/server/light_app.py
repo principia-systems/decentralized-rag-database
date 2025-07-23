@@ -2,7 +2,7 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr
-from typing import List, Optional, Dict
+from typing import List, Dict
 import json
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,9 +10,7 @@ import logging
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import os
-from datetime import datetime
-from typing import Dict, Any
-import uuid
+from typing import Dict, Any 
 import requests
 
 # Import your entry points

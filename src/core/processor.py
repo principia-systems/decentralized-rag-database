@@ -14,7 +14,7 @@ import certifi
 
 from src.core.chunker import chunk
 from src.core.converter import convert
-from src.core.embedder import embed, embed_batch
+from src.core.embedder import embed_batch
 from src.db.graph_db import IPFSNeo4jGraph
 from src.utils.ipfs_utils import get_ipfs_client
 from src.utils.logging_utils import get_logger, get_user_logger
@@ -146,6 +146,20 @@ class Processor:
         except Exception as e:
             self.logger.error(f"Error writing mappings to {mapping_file_path}: {e}")
 
+    def _query_ipfs_content(self, cid):
+        """
+        Retrieves the content stored in IPFS for a given CID.
+
+        :param cid: The IPFS CID.
+        :return: The content of the IPFS file as a string.
+        """
+        try:
+            content = self.ipfs_client.get_content(cid)
+            return content.strip()  # Ensure leading/trailing spaces are removed
+        except Exception as e:
+            self.logger.error(f"Failed to retrieve IPFS content for CID {cid}: {e}")
+            return None
+
     def __update_mappings(self, pdf_cid: str, db_combination: str) -> None:
         """Update both global and user-specific mappings.
         
@@ -243,7 +257,7 @@ class Processor:
             # If the conversion already exists, use the existing conversion
             if converted_text_ipfs_cid:
                 # Fetch converted text content from IPFS
-                converted_text = self.graph_db._query_ipfs_content(
+                converted_text = self._query_ipfs_content(
                     converted_text_ipfs_cid
                 )
                 if converted_text:

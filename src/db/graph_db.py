@@ -12,7 +12,6 @@ import certifi
 import requests
 from neo4j import GraphDatabase
 
-from src.utils.ipfs_utils import get_ipfs_client
 from src.utils.logging_utils import get_logger
 
 # Get module logger
@@ -45,9 +44,6 @@ class IPFSNeo4jGraph:
         self.password = password or os.getenv("NEO4J_PASSWORD")
 
         self.logger = get_logger(__name__ + ".IPFSNeo4jGraph")
-        
-        # Initialize IPFS client
-        self.ipfs_client = get_ipfs_client()
 
         if not all([self.uri, self.username, self.password]):
             missing = []
@@ -266,50 +262,3 @@ class IPFSNeo4jGraph:
                 f"Failed to traverse path from {start_cid} with path {path}: {e}"
             )
             return False
-
-    def _query_ipfs_content(self, cid):
-        """
-        Retrieves the content stored in IPFS for a given CID.
-
-        :param cid: The IPFS CID.
-        :return: The content of the IPFS file as a string.
-        """
-        try:
-            content = self.ipfs_client.get_content(cid)
-            return content.strip()  # Ensure leading/trailing spaces are removed
-        except Exception as e:
-            self.logger.error(f"Failed to retrieve IPFS content for CID {cid}: {e}")
-            return None
-
-    def get_authored_by_stats(self):
-        """
-        Retrieves a dictionary where keys are the author IDs (fetched from IPFS),
-        and values are the number of incoming relationships pointing to them.
-
-        :return: Dictionary {author_id: incoming_count}
-        """
-        try:
-            with self.driver.session() as session:
-                query = """
-                MATCH (n)-[:AUTHORED_BY]->(a)
-                RETURN a.cid AS authored_by_cid, COUNT(n) AS incoming_count
-                """
-                result = session.run(query)
-
-                authored_by_dict = {}
-
-                for record in result:
-                    cid = record["authored_by_cid"]
-                    incoming_count = record["incoming_count"]
-
-                    author_id = self._query_ipfs_content(cid)
-
-                    if author_id:
-                        authored_by_dict[author_id.strip()] = incoming_count
-                    else:
-                        self.logger.warning(f"Could not fetch author ID for CID: {cid}")
-
-                return authored_by_dict
-        except Exception as e:
-            self.logger.error(f"Failed to retrieve AUTHORED_BY stats: {e}")
-            return {}
