@@ -16,7 +16,7 @@ from src.utils.gdrive_scraper import scrape_gdrive_pdfs
 from src.core.processor_main import process_combination
 from src.utils.logging_utils import get_user_logger
 from src.utils.file_lock import load_jobs_safe, save_jobs_safe, reset_job_tracking_safe
-
+from src.utils.file_lock import increment_job_progress_safe
 # Setup FastAPI app
 app = FastAPI(
     title="Heavy API",
@@ -36,7 +36,7 @@ app.add_middleware(
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 # Configuration
-DATABASE_SERVER_URL = os.getenv('DATABASE_SERVER_URL', 'http://localhost:5002')
+DATABASE_SERVER_URL = os.getenv('DATABASE_SERVER_URL', 'http://localhost:5003')
 
 # Global lock for database creation to prevent concurrent write conflicts
 _db_creation_lock = asyncio.Lock()
@@ -52,6 +52,11 @@ def save_jobs(jobs_data):
     print("[HEAVY] WARNING: Using deprecated save_jobs(). Use file_lock.save_jobs_safe() instead.")
     return save_jobs_safe(jobs_data)
 
+def increment_job_progress(user_email: str, increment: int):
+    """Increment job progress for a user"""
+    logger = get_user_logger(user_email, "job_progress")
+    logger.info(f"Incrementing job progress for {user_email} by {increment}")
+    return increment_job_progress_safe(user_email, increment)
 
 async def create_database_via_server(user_email: str) -> bool:
     """
@@ -183,17 +188,21 @@ async def background_processing(
             # Use the async lock to prevent concurrent database creation issues
             async with _db_creation_lock:
                 success = await create_database_via_server(user_email)
+                logger.info(f"Database creation successful: {success}")
+                increment_job_progress(user_email, 10)
                 if success:
                     logger.info(f"Successfully completed database creation for {user_email}")
                 else:
                     logger.error(f"Database creation failed for {user_email}")
         except Exception as db_error:
+            increment_job_progress(user_email, 10)
             logger.error(f"Error during database creation for {user_email}: {str(db_error)}")
             # Don't raise the exception - processing was successful even if DB creation failed
 
         logger.info(f"Background processing completed for {user_email}")
         
     except Exception as e:
+        increment_job_progress(user_email, 10)
         logger.error(f"Error in background processing for {user_email}: {str(e)}")
 
 
@@ -321,7 +330,7 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         logger.info(f"Downloaded {len(downloaded_files)} files, starting background processing...")
         
         # Reset job tracking for this new batch - using thread-safe version
-        total_jobs = (len(processing_combinations) * len(downloaded_files)) * 2
+        total_jobs = (len(processing_combinations) * len(downloaded_files)) + 10
         success = reset_job_tracking_safe(request.user_email, total_jobs)
         if not success:
             logger.warning(f"Failed to reset job tracking for {request.user_email}")
