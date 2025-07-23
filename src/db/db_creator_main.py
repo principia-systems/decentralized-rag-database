@@ -154,12 +154,7 @@ def create_user_database(user_email: str):
     # Initialize database manager with the specific db names found in mappings
     vector_db_manager = VectorDatabaseManager(list(db_names), db_path=str(user_db_path))
     
-    # Get light server URL from config if available
-    light_server_url = None
-    if "light_server" in config and "url" in config["light_server"]:
-        light_server_url = os.getenv(config["light_server"]["url"].replace("${", "").replace("}", ""))
-    
-    create_db = DatabaseCreator(graph, vector_db_manager, user_email, light_server_url)
+    create_db = DatabaseCreator(graph, vector_db_manager, user_email)
 
     # Process only the new CID-database combinations
     total_processed = 0

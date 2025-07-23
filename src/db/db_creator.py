@@ -27,7 +27,7 @@ class DatabaseCreator:
     relationships and inserts them into ChromaDB collections.
     """
 
-    def __init__(self, graph, vector_db_manager, user_email=None, light_server_url=None):
+    def __init__(self, graph, vector_db_manager, user_email=None):
         """
         Initialize the DatabaseCreator.
 
@@ -40,7 +40,7 @@ class DatabaseCreator:
         self.graph = graph
         self.vector_db_manager = vector_db_manager
         self.user_email = user_email
-        self.light_server_url = light_server_url or os.getenv('LIGHT_SERVER_URL', 'http://localhost:5001')
+        self.light_server_url = os.getenv('LIGHT_SERVER_URL', 'http://localhost:5001')
         
         # Initialize IPFS client
         self.ipfs_client = get_ipfs_client()
