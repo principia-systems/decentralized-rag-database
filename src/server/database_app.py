@@ -35,12 +35,242 @@ class CreateDatabaseRequest(BaseModel):
     mappings: Dict[str, List[str]]  # CID -> list of database combinations
     model_name: str = "openai/gpt-4o-mini"
 
+class WhitelistRequest(BaseModel):
+    requester_email: str
+    target_email: str
+
+class WhitelistResponse(BaseModel):
+    success: bool
+    message: str
+    requester_email: str
+    target_email: str
+
+class WhitelistInfoResponse(BaseModel):
+    success: bool
+    user_email: str
+    whitelisted_users: List[str]  # Users this person has whitelisted
+    whitelisted_by: List[str]     # Users who have whitelisted this person
+
+class WhitelistRemoveRequest(BaseModel):
+    requester_email: str
+    target_email: str
+
+def get_user_temp_dir(user_email: str) -> Path:
+    """Get the temp directory path for a user"""
+    return PROJECT_ROOT / "temp" / user_email
+
+def ensure_user_temp_dir(user_email: str) -> Path:
+    """Ensure user temp directory exists and return its path"""
+    user_temp_dir = get_user_temp_dir(user_email)
+    os.makedirs(user_temp_dir, exist_ok=True)
+    return user_temp_dir
+
+def add_to_whitelist_file(file_path: Path, email: str) -> bool:
+    """Add an email to a whitelist file if not already present"""
+    existing_emails = []
+    
+    # Read existing emails if file exists
+    if file_path.exists():
+        try:
+            with open(file_path, 'r') as f:
+                existing_emails = [line.strip() for line in f.readlines() if line.strip()]
+        except Exception:
+            # If file is corrupted, start fresh
+            existing_emails = []
+    
+    # Add email if not already present
+    if email not in existing_emails:
+        existing_emails.append(email)
+        
+        # Write back to file
+        try:
+            with open(file_path, 'w') as f:
+                for email_entry in existing_emails:
+                    f.write(f"{email_entry}\n")
+            return True
+        except Exception:
+            return False
+    
+    return True  # Email already exists, which is fine
+
+def remove_from_whitelist_file(file_path: Path, email: str) -> bool:
+    """Remove an email from a whitelist file if it exists"""
+    if not file_path.exists():
+        return False  # File doesn't exist, nothing to remove
+    
+    try:
+        with open(file_path, 'r') as f:
+            existing_emails = [line.strip() for line in f.readlines() if line.strip()]
+        
+        # Filter out the email if it exists
+        was_present = email in existing_emails
+        updated_emails = [e for e in existing_emails if e != email]
+        
+        # Write back to file
+        with open(file_path, 'w') as f:
+            for email_entry in updated_emails:
+                f.write(f"{email_entry}\n")
+        
+        return was_present
+    except Exception:
+        return False
+
+def get_whitelist_from_file(file_path: Path) -> List[str]:
+    """Get list of emails from whitelist file"""
+    if not file_path.exists():
+        return []
+    
+    try:
+        with open(file_path, 'r') as f:
+            return [line.strip() for line in f.readlines() if line.strip()]
+    except Exception:
+        return []
+
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
     print("PROJECT_ROOT", PROJECT_ROOT)
     return {"status": "healthy", "service": "database"}
+
+@app.post("/api/whitelist/add", response_model=WhitelistResponse)
+async def add_to_whitelist(request: WhitelistRequest):
+    """
+    Add a user to another user's whitelist.
+    This creates a bidirectional relationship:
+    - Adds target_email to requester's whitelisted_users.txt
+    - Adds requester_email to target's whitelisted_by.txt
+    """
+    # Create user-specific logger for this request
+    user_logger = get_user_logger(request.requester_email, "whitelist_add")
+    
+    try:
+        user_logger.info(f"Processing whitelist request: {request.requester_email} -> {request.target_email}")
+        
+        # Validate that emails are different
+        if request.requester_email == request.target_email:
+            raise HTTPException(status_code=400, detail="Cannot whitelist yourself")
+        
+        # Ensure both users' temp directories exist
+        requester_temp_dir = ensure_user_temp_dir(request.requester_email)
+        target_temp_dir = ensure_user_temp_dir(request.target_email)
+        
+        # Define file paths
+        requester_whitelisted_users_file = requester_temp_dir / "whitelisted_users.txt"
+        target_whitelisted_by_file = target_temp_dir / "whitelisted_by.txt"
+        
+        # Add target to requester's whitelisted users
+        success1 = add_to_whitelist_file(requester_whitelisted_users_file, request.target_email)
+        if not success1:
+            raise HTTPException(status_code=500, detail="Failed to update requester's whitelist file")
+        
+        # Add requester to target's whitelisted by
+        success2 = add_to_whitelist_file(target_whitelisted_by_file, request.requester_email)
+        if not success2:
+            raise HTTPException(status_code=500, detail="Failed to update target's whitelist file")
+        
+        user_logger.info(f"Successfully whitelisted {request.target_email} for {request.requester_email}")
+        
+        return WhitelistResponse(
+            success=True,
+            message=f"Successfully whitelisted {request.target_email}",
+            requester_email=request.requester_email,
+            target_email=request.target_email
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        user_logger.error(f"Error in whitelist operation: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing whitelist request: {str(e)}")
+
+@app.get("/api/whitelist/{user_email}", response_model=WhitelistInfoResponse)
+async def get_whitelist_info(user_email: str):
+    """
+    Get whitelist information for a user:
+    - Users they have whitelisted
+    - Users who have whitelisted them
+    """
+    # Create user-specific logger for this request
+    user_logger = get_user_logger(user_email, "whitelist_info")
+    
+    try:
+        user_logger.info(f"Retrieving whitelist info for: {user_email}")
+        
+        # Ensure user temp directory exists
+        user_temp_dir = ensure_user_temp_dir(user_email)
+        
+        # Define file paths
+        whitelisted_users_file = user_temp_dir / "whitelisted_users.txt"
+        whitelisted_by_file = user_temp_dir / "whitelisted_by.txt"
+        
+        # Get lists from files
+        whitelisted_users = get_whitelist_from_file(whitelisted_users_file)
+        whitelisted_by = get_whitelist_from_file(whitelisted_by_file)
+        
+        user_logger.info(f"Retrieved {len(whitelisted_users)} whitelisted users and {len(whitelisted_by)} whitelisted by for {user_email}")
+        
+        return WhitelistInfoResponse(
+            success=True,
+            user_email=user_email,
+            whitelisted_users=whitelisted_users,
+            whitelisted_by=whitelisted_by
+        )
+        
+    except Exception as e:
+        user_logger.error(f"Error retrieving whitelist info: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving whitelist info: {str(e)}")
+
+@app.post("/api/whitelist/remove", response_model=WhitelistResponse)
+async def remove_from_whitelist(request: WhitelistRemoveRequest):
+    """
+    Remove a user from another user's whitelist.
+    This removes the bidirectional relationship:
+    - Removes target_email from requester's whitelisted_users.txt
+    - Removes requester_email from target's whitelisted_by.txt
+    """
+    # Create user-specific logger for this request
+    user_logger = get_user_logger(request.requester_email, "whitelist_remove")
+    
+    try:
+        user_logger.info(f"Processing whitelist removal: {request.requester_email} -> {request.target_email}")
+        
+        # Validate that emails are different
+        if request.requester_email == request.target_email:
+            raise HTTPException(status_code=400, detail="Cannot remove yourself from whitelist")
+        
+        # Get temp directories (don't create if they don't exist)
+        requester_temp_dir = get_user_temp_dir(request.requester_email)
+        target_temp_dir = get_user_temp_dir(request.target_email)
+        
+        # Define file paths
+        requester_whitelisted_users_file = requester_temp_dir / "whitelisted_users.txt"
+        target_whitelisted_by_file = target_temp_dir / "whitelisted_by.txt"
+        
+        # Remove target from requester's whitelisted users
+        success1 = remove_from_whitelist_file(requester_whitelisted_users_file, request.target_email)
+        
+        # Remove requester from target's whitelisted by
+        success2 = remove_from_whitelist_file(target_whitelisted_by_file, request.requester_email)
+        
+        if success1 or success2:  # Success if we removed from at least one file
+            user_logger.info(f"Successfully removed {request.target_email} from {request.requester_email}'s whitelist")
+            message = f"Successfully removed {request.target_email} from whitelist"
+        else:
+            message = f"{request.target_email} was not in the whitelist"
+        
+        return WhitelistResponse(
+            success=True,
+            message=message,
+            requester_email=request.requester_email,
+            target_email=request.target_email
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        user_logger.error(f"Error in whitelist removal: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing whitelist removal: {str(e)}")
 
 
 class EvaluationRequest(BaseModel):

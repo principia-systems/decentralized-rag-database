@@ -99,8 +99,7 @@ async def create_database_via_server(user_email: str) -> bool:
         logger.info(f"Calling database server at {DATABASE_SERVER_URL}/api/database/create")
         response = requests.post(
             f"{DATABASE_SERVER_URL}/api/database/create",
-            json=request_data,
-            timeout=1800  # 30 minute timeout for database creation
+            json=request_data
         )
         response.raise_for_status()
         
