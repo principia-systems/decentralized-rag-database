@@ -9,14 +9,14 @@ import glob
 import json
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
+import requests
 
 # Import your entry points
 from src.utils.gdrive_scraper import scrape_gdrive_pdfs
 from src.core.processor_main import process_combination
-from src.db.db_creator_main import create_user_database
 from src.utils.logging_utils import get_user_logger
 from src.utils.file_lock import load_jobs_safe, save_jobs_safe, reset_job_tracking_safe
-
+from src.utils.file_lock import increment_job_progress_safe
 # Setup FastAPI app
 app = FastAPI(
     title="Heavy API",
@@ -35,6 +35,9 @@ app.add_middleware(
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
+# Configuration
+DATABASE_SERVER_URL = os.getenv('DATABASE_SERVER_URL', 'http://localhost:5003')
+
 # Global lock for database creation to prevent concurrent write conflicts
 _db_creation_lock = asyncio.Lock()
 
@@ -48,6 +51,73 @@ def save_jobs(jobs_data):
     """DEPRECATED: Use save_jobs_safe() from src.utils.file_lock instead"""
     print("[HEAVY] WARNING: Using deprecated save_jobs(). Use file_lock.save_jobs_safe() instead.")
     return save_jobs_safe(jobs_data)
+
+def increment_job_progress(user_email: str, increment: int):
+    """Increment job progress for a user"""
+    logger = get_user_logger(user_email, "job_progress")
+    logger.info(f"Incrementing job progress for {user_email} by {increment}")
+    return increment_job_progress_safe(user_email, increment)
+
+async def create_database_via_server(user_email: str) -> bool:
+    """
+    Create database by calling the database server endpoint.
+    
+    Args:
+        user_email: Email of the user for database creation
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    logger = get_user_logger(user_email, "database_server_call")
+    
+    try:
+        # Load mappings from user's temp directory
+        user_temp_path = PROJECT_ROOT / "temp" / user_email
+        mappings_file_path = user_temp_path / "mappings.json"
+        
+        if not mappings_file_path.exists():
+            logger.error(f"No mappings.json file found for user {user_email}")
+            return False
+            
+        with open(mappings_file_path, "r") as file:
+            mappings = json.load(file)
+            
+        if not mappings:
+            logger.warning(f"Empty mappings file for user {user_email}")
+            return False
+            
+        logger.info(f"Loaded {len(mappings)} CID mappings for database creation")
+        
+        # Prepare request data
+        request_data = {
+            "user_email": user_email,
+            "mappings": mappings,
+            "model_name": "openai/gpt-4o-mini"
+        }
+        
+        # Make request to database server
+        logger.info(f"Calling database server at {DATABASE_SERVER_URL}/api/database/create")
+        response = requests.post(
+            f"{DATABASE_SERVER_URL}/api/database/create",
+            json=request_data
+        )
+        response.raise_for_status()
+        
+        result = response.json()
+        logger.info(f"Database creation successful: {result.get('message', 'Success')}")
+        logger.info(f"Processed {result.get('total_cids', 0)} CIDs with {result.get('total_combinations', 0)} combinations")
+        
+        return True
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to call database server: {e}")
+        return False
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.error(f"Error loading mappings file: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error in database creation: {e}")
+        return False
 
 
 # Background processing function
@@ -111,21 +181,27 @@ async def background_processing(
         except Exception as cleanup_error:
             logger.error(f"Error during PDF cleanup: {str(cleanup_error)}")
 
-        # Automatically create user database after processing completes
+        # Create databases via database server
+        logger.info(f"Starting database creation for {user_email}")
         try:
-            logger.info(f"Creating database for user: {user_email}")
-            # Use async lock to prevent concurrent database creation conflicts
+            # Use the async lock to prevent concurrent database creation issues
             async with _db_creation_lock:
-                logger.debug(f"Acquired lock for database creation: {user_email}")
-                # Run database creation directly in async context to avoid SQLite threading issues
-                create_user_database(user_email)
-            logger.info(f"Successfully created database for user: {user_email}")
+                success = await create_database_via_server(user_email)
+                logger.info(f"Database creation successful: {success}")
+                increment_job_progress(user_email, 10)
+                if success:
+                    logger.info(f"Successfully completed database creation for {user_email}")
+                else:
+                    logger.error(f"Database creation failed for {user_email}")
         except Exception as db_error:
-            logger.error(f"Error creating user database: {str(db_error)}")
+            increment_job_progress(user_email, 10)
+            logger.error(f"Error during database creation for {user_email}: {str(db_error)}")
+            # Don't raise the exception - processing was successful even if DB creation failed
 
         logger.info(f"Background processing completed for {user_email}")
         
     except Exception as e:
+        increment_job_progress(user_email, 10)
         logger.error(f"Error in background processing for {user_email}: {str(e)}")
 
 
@@ -253,7 +329,7 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         logger.info(f"Downloaded {len(downloaded_files)} files, starting background processing...")
         
         # Reset job tracking for this new batch - using thread-safe version
-        total_jobs = (len(processing_combinations) * len(downloaded_files)) * 2
+        total_jobs = (len(processing_combinations) * len(downloaded_files)) + 10
         success = reset_job_tracking_safe(request.user_email, total_jobs)
         if not success:
             logger.warning(f"Failed to reset job tracking for {request.user_email}")

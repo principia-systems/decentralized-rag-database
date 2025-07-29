@@ -120,28 +120,6 @@ async def evaluate_endpoint(request: EvaluationRequest):
 class EmbedRequest(BaseModel):
     user_email: str
 
-@app.post("/api/embed")
-async def embed_endpoint(request: EmbedRequest):
-    """Endpoint to create user database"""
-    # Create user-specific logger for this request
-    user_logger = get_user_logger(request.user_email, "embed_database")
-    
-    try:
-        user_logger.info(f"Creating database for user: {request.user_email}")
-        
-        # Create user database
-        create_user_database(request.user_email)
-        
-        user_logger.info(f"Successfully created database for user: {request.user_email}")
-        return {
-            "success": True,
-            "message": f"Successfully created database for user: {request.user_email}",
-            "user_email": request.user_email
-        }
-    except Exception as e:
-        user_logger.error(f"Error creating user database: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error creating user database: {str(e)}")
-
 @app.post("/api/ingest/gdrive", response_model=IngestGDriveResponse)
 async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
     """
@@ -168,7 +146,7 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         # Validate component lists
         valid_converters = ["marker", "openai", "markitdown"]
         valid_chunkers = ["fixed_length", "recursive", "markdown_aware", "semantic_split"]
-        valid_embedders = ["openai", "bge", "nomic", "instructor"]
+        valid_embedders = ["openai", "bge", "bgelarge", "nomic", "instructor"]
         
         # Validate requested components
         for converter in request.converters:

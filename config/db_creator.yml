@@ -13,3 +13,7 @@ user:
 # Vector database configuration
 vector_db:
   path: src/database
+
+# Light server configuration for batch retrieval
+light_server:
+  url: ${LIGHT_SERVER_URL}

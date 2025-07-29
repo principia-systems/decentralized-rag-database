@@ -16,8 +16,6 @@ from dotenv import load_dotenv
 from src.db.chroma_client import VectorDatabaseManager
 from src.db.db_creator import DatabaseCreator
 from src.db.graph_db import IPFSNeo4jGraph
-from src.utils.logging_utils import get_logger
-from src.utils.file_lock import increment_job_progress_safe
 from src.utils.logging_utils import get_logger, get_user_logger
 
 # Get module logger
@@ -45,17 +43,6 @@ def load_config():
     except Exception as e:
         logger.error(f"Error loading configuration from {config_path}: {e}")
         raise
-
-
-def increment_job_progress(user_email, increment=1):
-    """Increment completed job count for user - using thread-safe implementation"""
-
-    # Create user-specific logger for this operation
-    user_logger = get_user_logger(user_email, "job_progress")
-
-    success = increment_job_progress_safe(user_email, increment)
-    if not success:
-        user_logger.error(f"Failed to increment job progress for {user_email}")
 
 
 
@@ -89,6 +76,8 @@ def create_user_database(user_email: str):
         uri=neo4j_uri, username=neo4j_username, password=neo4j_password
     )
 
+    user_logger.info(f"Neo4j graph initialized with URI: {neo4j_uri}")
+
     # Look for user-specific mappings file
     user_temp_path = PROJECT_ROOT / "temp" / user_email
     mappings_file_path = user_temp_path / "mappings.json"
@@ -102,18 +91,6 @@ def create_user_database(user_email: str):
     # Load mappings
     with open(mappings_file_path, "r") as file:
         mappings = json.load(file)
-    
-    # Load job tracking from global jobs.json (thread-safe)
-    from src.utils.file_lock import load_jobs_safe
-    jobs = load_jobs_safe()
-    
-    if user_email not in jobs:
-        user_logger.error(f"No job tracking found for user {user_email}")
-        return
-        
-    total_jobs = jobs[user_email][0]
-    completed_jobs = jobs[user_email][1]
-    remaining_jobs = total_jobs - completed_jobs
 
     if not mappings:
         user_logger.warning(f"Empty mappings file for user {user_email}")
@@ -146,17 +123,6 @@ def create_user_database(user_email: str):
             if new_combinations:
                 items_to_process[pdf_cid] = new_combinations
 
-    # Calculate how many items we need to process vs already processed
-    number_items_to_process = sum(len(combos) for combos in items_to_process.values())
-    already_processed_increment = remaining_jobs - number_items_to_process
-    
-    user_logger.info(f"DB Creator: remaining_jobs={remaining_jobs}, items_to_process={number_items_to_process}")
-    user_logger.info(f"DB Creator: Incrementing by {already_processed_increment} for already processed items")
-    
-    # Increment for already processed DB creator work
-    if already_processed_increment > 0:
-        increment_job_progress(user_email, already_processed_increment)
-
     if not items_to_process:
         user_logger.info("No new items to process. All mappings are already embedded.")
         return
@@ -179,6 +145,7 @@ def create_user_database(user_email: str):
 
     # Initialize database manager with the specific db names found in mappings
     vector_db_manager = VectorDatabaseManager(list(db_names), db_path=str(user_db_path))
+    
     create_db = DatabaseCreator(graph, vector_db_manager, user_email)
 
     # Process only the new CID-database combinations
@@ -216,10 +183,8 @@ def create_user_database(user_email: str):
                 create_db.process_paths(pdf_cid, relationship_path, db_combination)
                 successfully_processed[pdf_cid].append(db_combination)
                 total_processed += 1
-                increment_job_progress(user_email, 1)
             except Exception as e:
                 user_logger.error(f"Error processing {pdf_cid} with {db_combination}: {e}")
-                increment_job_progress(user_email, 1)
                 successfully_processed[pdf_cid].append(db_combination)
                 continue
 
