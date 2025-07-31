@@ -90,6 +90,61 @@ class DatabaseCreator:
             self.logger.error(f"Invalid response format from light server: {e}")
             return None, None
 
+    def get_pdf_metadata(self, pdf_cid):
+        """
+        Retrieve metadata for a given PDF CID.
+        
+        Args:
+            pdf_cid: The PDF CID to get metadata for
+            
+        Returns:
+            Dictionary containing metadata or None if not found
+        """
+        try:
+            # Get metadata CID from graph database
+            metadata_cid = self.graph.get_existing_metadata_cid(pdf_cid)
+            
+            if not metadata_cid:
+                self.logger.warning(f"No metadata node found for PDF CID {pdf_cid}")
+                return None
+            
+            # Retrieve metadata content from light server
+            try:
+                request_data = {
+                    "content_cids": [metadata_cid],
+                    "user_email": self.user_email or "system"
+                }
+                
+                response = requests.post(
+                    f"{self.light_server_url}/api/ipfs/batch-retrieve",
+                    json=request_data,
+                    timeout=30
+                )
+                response.raise_for_status()
+                
+                result = response.json()
+                
+                if metadata_cid in result.get("contents", {}):
+                    metadata_json = result["contents"][metadata_cid]
+                    try:
+                        metadata = json.loads(metadata_json)
+                        self.logger.debug(f"Retrieved metadata for PDF {pdf_cid}: {metadata.get('title', 'Unknown Title')}")
+                        return metadata
+                    except json.JSONDecodeError as e:
+                        self.logger.error(f"Failed to parse metadata JSON for PDF {pdf_cid}: {e}")
+                        return None
+                else:
+                    self.logger.warning(f"Metadata content not found for CID {metadata_cid}")
+                    return None
+                    
+            except requests.exceptions.RequestException as e:
+                self.logger.error(f"Failed to retrieve metadata from light server: {e}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Error retrieving metadata for PDF {pdf_cid}: {e}")
+            return None
+
     def process_paths(self, start_cid, path, db_name):
         paths = self.graph.recreate_path(start_cid, path)
 
@@ -98,6 +153,15 @@ class DatabaseCreator:
             return
 
         self.logger.info(f"Found {len(paths)} paths for CID {start_cid}")
+
+        # Retrieve PDF metadata once for all embeddings
+        self.logger.info(f"Retrieving metadata for PDF CID {start_cid}")
+        pdf_metadata = self.get_pdf_metadata(start_cid)
+        
+        if pdf_metadata:
+            self.logger.info(f"Retrieved metadata: '{pdf_metadata.get('title', 'Unknown Title')}' by {pdf_metadata.get('authors', ['Unknown Authors'])}")
+        else:
+            self.logger.warning(f"No metadata available for PDF {start_cid}, proceeding without metadata")
 
         # Collect all CIDs for batch retrieval
         embedding_cids = []
@@ -151,11 +215,13 @@ class DatabaseCreator:
             embedding_vector = embeddings_dict[embedding_cid]
             content = contents_dict[content_cid]
 
+            # Build metadata including PDF metadata
             metadata = {
                 "content_cid": content_cid,
                 "root_cid": start_cid,
                 "embedding_cid": embedding_cid,
                 "content": content,
+                **(pdf_metadata if pdf_metadata else {})
             }
 
             try:
@@ -163,8 +229,8 @@ class DatabaseCreator:
                     db_name, embedding_vector, metadata, embedding_cid
                 )
                 successful_inserts += 1
-                self.logger.debug(f"Inserted document into '{db_name}' with CID {embedding_cid}")
+                self.logger.debug(f"Inserted document into '{db_name}' with CID {embedding_cid} and metadata")
             except Exception as e:
                 self.logger.error(f"Failed to insert document into '{db_name}': {e}")
 
-        self.logger.info(f"Successfully inserted {successful_inserts}/{len(path_metadata)} documents into '{db_name}'")
+        self.logger.info(f"Successfully inserted {successful_inserts}/{len(path_metadata)} documents into '{db_name}' with PDF metadata")

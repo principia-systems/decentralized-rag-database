@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import certifi
+import requests
 
 from src.core.chunker import chunk
 from src.core.converter import convert
@@ -74,6 +75,9 @@ class Processor:
         self.graph_db = IPFSNeo4jGraph(
             uri=neo4j_uri, username=neo4j_username, password=neo4j_password
         )
+
+        # Get OpenRouter API key for metadata extraction
+        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
 
         self.__write_to_file(self.authorPublicKey, str(self.tmp_file_path))
         self.logger.info(
@@ -160,6 +164,165 @@ class Processor:
             self.logger.error(f"Failed to retrieve IPFS content for CID {cid}: {e}")
             return None
 
+    def _extract_metadata_with_openrouter(self, markdown_content: str, model_name: str = "openai/gpt-4o-mini") -> Optional[Dict[str, Any]]:
+        """
+        Extract metadata from markdown content using OpenRouter API.
+        
+        Args:
+            markdown_content: The markdown content to extract metadata from
+            model_name: The OpenRouter model to use for extraction
+            
+        Returns:
+            Dictionary containing extracted metadata or None if extraction fails
+        """
+        if not self.openrouter_api_key:
+            self.logger.warning("OpenRouter API key not available. Cannot extract metadata.")
+            return None
+            
+        # Create a prompt for metadata extraction
+        system_prompt = """You are a helpful assistant that extracts metadata from academic papers in markdown format. 
+            Extract the following information and return it as a valid JSON object:
+            - title: The paper title
+            - authors: List of author names (as an array)
+=            - categories: Research categories/fields (as an array)
+            - doi: DOI if available
+            - keywords: Key terms/concepts (as an array)
+            - publication_date: Publication date if mentioned
+            - journal: Journal name if mentioned
+            - citation: A properly formatted citation in APA style
+
+            Example JSON structure (use appropriate values from the paper):
+            {
+            "title": "Deep Learning for Natural Language Processing: A Survey",
+            "authors": ["John Smith", "Jane Doe", "Bob Johnson"],
+            "categories": ["Computer Science", "Natural Language Processing", "Machine Learning"],
+            "doi": "10.1000/182",
+            "keywords": ["deep learning", "natural language processing", "neural networks"],
+            "publication_date": "2023-05-15",
+            "journal": "Journal of Machine Learning Research",
+            "citation": "Smith, J., Doe, J., & Johnson, B. (2023). Deep Learning for Natural Language Processing: A Survey. Journal of Machine Learning Research, 24(5), 123-145. https://doi.org/10.1000/182"
+            }
+
+            If any field is not found, use appropriate default values like "Unknown Title", ["Unknown Authors"], "No abstract available", etc.
+            Return ONLY the JSON object, no additional text."""
+
+        user_prompt = f"Please extract metadata from this academic paper:\n\n{markdown_content[:8000]}"  # Limit content to avoid token limits
+        
+        try:
+            response = requests.post(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.openrouter_api_key}",
+                    "HTTP-Referer": "https://coophive.com",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model_name,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.1,
+                    "max_tokens": 1000,
+                },
+                timeout=30,
+            )
+            
+            response.raise_for_status()
+            response_data = response.json()
+            
+            if response_data.get("choices") and len(response_data["choices"]) > 0:
+                content = response_data["choices"][0]["message"]["content"]
+                
+                # Try to parse the JSON response
+                try:
+                    metadata = json.loads(content)
+                    self.logger.info("Successfully extracted metadata using OpenRouter")
+                    return metadata
+                except json.JSONDecodeError:
+                    # If response isn't valid JSON, try to extract it
+                    self.logger.warning("OpenRouter response wasn't valid JSON, trying to parse...")
+                    try:
+                        # Look for JSON-like content in the response
+                        start_idx = content.find('{')
+                        end_idx = content.rfind('}') + 1
+                        if start_idx != -1 and end_idx != 0:
+                            json_str = content[start_idx:end_idx]
+                            metadata = json.loads(json_str)
+                            self.logger.info("Successfully parsed metadata from OpenRouter response")
+                            return metadata
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                    
+                    self.logger.error(f"Failed to parse OpenRouter response as JSON: {content}")
+                    return None
+            else:
+                self.logger.error("No response content from OpenRouter")
+                return None
+                
+        except requests.exceptions.Timeout:
+            self.logger.error("OpenRouter API request timed out")
+            return None
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"OpenRouter API request failed: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Unexpected error during metadata extraction: {e}")
+            return None
+
+    def _create_or_get_metadata_node(self, pdf_cid: str, converted_text: str) -> Optional[str]:
+        """
+        Create or retrieve a metadata node for the given PDF.
+        
+        Args:
+            pdf_cid: The PDF CID to create/get metadata for
+            converted_text: The converted markdown text to extract metadata from
+            
+        Returns:
+            The metadata CID if successful, None otherwise
+        """
+        # Check if metadata already exists
+        existing_metadata_cid = self.graph_db.get_existing_metadata_cid(pdf_cid)
+        if existing_metadata_cid:
+            self.logger.info(f"Using existing metadata node: {existing_metadata_cid}")
+            return existing_metadata_cid
+        
+        self.logger.info("No existing metadata found, extracting with OpenRouter...")
+        
+        # Extract metadata using OpenRouter
+        extracted_metadata = self._extract_metadata_with_openrouter(converted_text)
+        
+        if not extracted_metadata:
+            self.logger.warning("Failed to extract metadata with OpenRouter, using default metadata")
+            extracted_metadata = self.graph_db.default_metadata()
+        
+        # Serialize metadata as JSON
+        try:
+            metadata_json = json.dumps(extracted_metadata, indent=2)
+            
+            # Write metadata to temporary file
+            self.__write_to_file(metadata_json, self.tmp_file_path)
+            
+            # Upload metadata to IPFS
+            metadata_cid = self.ipfs_client.upload_file(str(self.tmp_file_path))
+            
+            if not metadata_cid:
+                self.logger.error("Failed to upload metadata to IPFS")
+                return None
+                
+            self.logger.info(f"Created new metadata node: {metadata_cid}")
+            
+            # Create metadata node and relationship using graph database
+            if self.graph_db.create_metadata_node(pdf_cid, metadata_cid):
+                return metadata_cid
+            else:
+                self.logger.error("Failed to create metadata node in graph database")
+                return None
+            
+        except Exception as e:
+            self.logger.error(f"Error creating metadata node: {e}")
+            return None
+
     def __update_mappings(self, pdf_cid: str, db_combination: str) -> None:
         """Update both global and user-specific mappings.
         
@@ -202,18 +365,7 @@ class Processor:
         self.convert_cache = {}
         self.chunk_cache = {}
 
-        metadata = self.default_metadata()
-
-        metadata = {
-            key: (
-                json.dumps(value)
-                if isinstance(value, (list, dict))
-                else value
-                if value is not None
-                else "N/A"
-            )
-            for key, value in metadata.items()
-        }
+        metadata = {}
 
         self.logger.info(f"Uploading PDF to IPFS: {pdf_path}")
         metadata["pdf_ipfs_cid"] = self.ipfs_client.upload_file(pdf_path)
@@ -224,6 +376,9 @@ class Processor:
 
         self.logger.info(f"Adding PDF CID to graph: {metadata['pdf_ipfs_cid']}")
         self.graph_db.add_ipfs_node(metadata["pdf_ipfs_cid"])
+        
+        # Handle metadata extraction and node creation
+        metadata_cid = None
         
         for db_config in databases:
             
@@ -294,6 +449,19 @@ class Processor:
                     "CONVERTED_BY_" + converter_func,
                 )
                 all_authored_nodes.append(converted_text_ipfs_cid)
+
+            # Step 2.1.5: Handle metadata creation (only once per document)
+            if metadata_cid is None:
+                self.logger.info("Creating or retrieving metadata node...")
+                metadata_cid = self._create_or_get_metadata_node(
+                    metadata["pdf_ipfs_cid"], 
+                    self.convert_cache[converter_func]
+                )
+                if metadata_cid:
+                    all_authored_nodes.append(metadata_cid)
+                    self.logger.info(f"Metadata node ready: {metadata_cid}")
+                else:
+                    self.logger.warning("Failed to create metadata node")
 
             # Step 2.2: Chunking
             self.logger.info(f"Starting chunking process for {converter_func}_{chunker_func}")
@@ -367,23 +535,3 @@ class Processor:
             self.graph_db.create_relationships_batch(authored_relationships)
                 
             self.__update_mappings(metadata["pdf_ipfs_cid"], db_combination)
-        
-    def default_metadata(self) -> Dict[str, Any]:
-        """Returns default metadata in case None is found.
-
-        The metadata.json file aready exists for Arxiv papers.
-
-        Returns:
-            A dictionary with default metadata values
-        """
-        # Define a dictionary with an explicit type cast
-        metadata: Dict[str, Any] = {}
-
-        # Add each field individually
-        metadata["title"] = "Unknown Title"
-        metadata["authors"] = "Unknown Authors"
-        metadata["categories"] = "Unknown Categories"
-        metadata["abstract"] = "No abstract available."
-        metadata["doi"] = "No DOI available"
-
-        return metadata

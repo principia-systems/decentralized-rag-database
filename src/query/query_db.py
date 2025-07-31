@@ -124,7 +124,7 @@ def query_collection(collection_name, user_query, db_path=None, user_email=None)
 
         values = collection.query(
             query_embeddings=[embedding],
-            n_results=4,
+            n_results=5,
             include=["metadatas", "documents", "distances"],
         )
 

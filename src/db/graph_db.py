@@ -6,7 +6,7 @@ and operations related to IPFS content identifiers (CIDs).
 """
 
 import os
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import certifi
 import requests
@@ -262,3 +262,74 @@ class IPFSNeo4jGraph:
                 f"Failed to traverse path from {start_cid} with path {path}: {e}"
             )
             return False
+
+    def get_existing_metadata_cid(self, pdf_cid: str) -> Optional[str]:
+        """
+        Check if metadata already exists for the given PDF CID.
+        
+        Args:
+            pdf_cid: The PDF CID to check for existing metadata
+            
+        Returns:
+            The metadata CID if it exists, None otherwise
+        """
+        try:
+            with self.driver.session() as session:
+                query = """
+                    MATCH (pdf:IPFS {cid: $pdf_cid})-[:HAS_METADATA]->(metadata:IPFS)
+                    RETURN metadata.cid as metadata_cid
+                """
+                result = session.run(query, pdf_cid=pdf_cid)
+                record = result.single()
+                if record:
+                    metadata_cid = record["metadata_cid"]
+                    self.logger.info(f"Found existing metadata CID: {metadata_cid}")
+                    return metadata_cid
+                return None
+        except Exception as e:
+            self.logger.error(f"Error checking for existing metadata: {e}")
+            return None
+
+    def create_metadata_node(self, pdf_cid: str, metadata_cid: str) -> bool:
+        """
+        Create a metadata node and link it to the PDF node.
+        
+        Args:
+            pdf_cid: The PDF CID to link metadata to
+            metadata_cid: The metadata CID to create and link
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Add metadata node to graph
+            self.add_ipfs_node(metadata_cid)
+            
+            # Create relationship between PDF and metadata
+            self.create_relationship(pdf_cid, metadata_cid, "HAS_METADATA")
+            
+            self.logger.info(f"Created metadata node {metadata_cid} linked to PDF {pdf_cid}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error creating metadata node: {e}")
+            return False
+
+    @staticmethod
+    def default_metadata():
+        """
+        Returns default metadata in case extraction fails.
+
+        Returns:
+            A dictionary with default metadata values
+        """
+        return {
+            "title": "Unknown Title",
+            "authors": ["Unknown Authors"],
+            "categories": ["Unknown Categories"],
+            "doi": "No DOI available",
+            "keywords": ["Unknown Keywords"],
+            "publication_date": "Unknown Date",
+            "journal": "Unknown Journal",
+            "citation": "Unknown Authors. (Unknown Date). Unknown Title. Unknown Journal. No DOI available"
+        }
