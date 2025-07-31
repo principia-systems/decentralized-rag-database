@@ -84,6 +84,41 @@ class VectorDatabaseManager:
         except Exception as e:
             print(f"Error inserting document into database '{db_name}': {e}")
 
+    def batch_insert_documents(
+        self, db_name: str, embeddings: list, metadatas: list, doc_ids: list
+    ):
+        """
+        Batch inserts multiple documents into the specified database in a single transaction.
+
+        :param db_name: Name of the database where the documents are to be inserted.
+        :param embeddings: List of embeddings for the document chunks.
+        :param metadatas: List of metadata dicts associated with the document chunks.
+        :param doc_ids: List of document IDs to use for insertion.
+        """
+        if db_name not in self.db_names:
+            raise ValueError(f"Database '{db_name}' does not exist.")
+
+        if not (len(embeddings) == len(metadatas) == len(doc_ids)):
+            raise ValueError("All input lists must have the same length.")
+
+        if not embeddings:
+            return  # Nothing to insert
+
+        # Extract documents from metadata
+        documents = [metadata["content_cid"] for metadata in metadatas]
+
+        # Batch insert all documents into the database
+        collection = self.db_client.get_collection(name=db_name)
+        try:
+            collection.add(
+                documents=documents,
+                embeddings=embeddings,
+                ids=doc_ids,
+                metadatas=metadatas,
+            )
+        except Exception as e:
+            raise Exception(f"Error batch inserting documents into database '{db_name}': {e}")
+
     def print_all_metadata(self):
         """
         Retrieves and prints all metadata from every collection.

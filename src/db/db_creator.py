@@ -111,6 +111,7 @@ class DatabaseCreator:
             # Retrieve metadata content from light server
             try:
                 request_data = {
+                    "embedding_cids": [],
                     "content_cids": [metadata_cid],
                     "user_email": self.user_email or "system"
                 }
@@ -197,8 +198,12 @@ class DatabaseCreator:
             self.logger.error("Batch retrieval failed, aborting path processing")
             return
 
-        # Process and insert documents one by one
-        successful_inserts = 0
+        # Process and prepare documents for batch insertion
+        batch_embeddings = []
+        batch_metadatas = []
+        batch_doc_ids = []
+        skipped_count = 0
+        
         for path_info in path_metadata:
             content_cid = path_info["content_cid"]
             embedding_cid = path_info["embedding_cid"]
@@ -206,10 +211,12 @@ class DatabaseCreator:
             # Check if we have both embedding and content
             if embedding_cid not in embeddings_dict:
                 self.logger.error(f"Missing embedding for CID {embedding_cid}, skipping")
+                skipped_count += 1
                 continue
                 
             if content_cid not in contents_dict:
                 self.logger.error(f"Missing content for CID {content_cid}, skipping")
+                skipped_count += 1
                 continue
 
             embedding_vector = embeddings_dict[embedding_cid]
@@ -224,13 +231,26 @@ class DatabaseCreator:
                 **(pdf_metadata if pdf_metadata else {})
             }
 
+            # Add to batch lists
+            batch_embeddings.append(embedding_vector)
+            batch_metadatas.append(metadata)
+            batch_doc_ids.append(embedding_cid)
+
+        # Perform batch insert if we have valid documents
+        successful_inserts = 0
+        if batch_embeddings:
             try:
-                self.vector_db_manager.insert_document(
-                    db_name, embedding_vector, metadata, embedding_cid
+                self.vector_db_manager.batch_insert_documents(
+                    db_name, batch_embeddings, batch_metadatas, batch_doc_ids
                 )
-                successful_inserts += 1
-                self.logger.debug(f"Inserted document into '{db_name}' with CID {embedding_cid} and metadata")
+                successful_inserts = len(batch_embeddings)
+                self.logger.info(f"Batch inserted {successful_inserts} documents into '{db_name}' with PDF metadata")
             except Exception as e:
-                self.logger.error(f"Failed to insert document into '{db_name}': {e}")
+                self.logger.error(f"Failed to batch insert documents into '{db_name}': {e}")
+        else:
+            self.logger.warning(f"No valid documents to insert into '{db_name}'")
+
+        if skipped_count > 0:
+            self.logger.warning(f"Skipped {skipped_count} documents due to missing data")
 
         self.logger.info(f"Successfully inserted {successful_inserts}/{len(path_metadata)} documents into '{db_name}' with PDF metadata")
