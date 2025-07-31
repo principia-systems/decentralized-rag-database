@@ -204,7 +204,7 @@ class DatabaseCreator:
         batch_doc_ids = []
         skipped_count = 0
         
-        for path_info in path_metadata:
+        for i, path_info in enumerate(path_metadata):
             content_cid = path_info["content_cid"]
             embedding_cid = path_info["embedding_cid"]
             
@@ -231,10 +231,17 @@ class DatabaseCreator:
                 **(pdf_metadata if pdf_metadata else {})
             }
 
-            # Add to batch lists
+            # Convert lists and dicts to strings for ChromaDB compatibility
+            for key, value in metadata.items():
+                if isinstance(value, (list, dict)):
+                    metadata[key] = str(value)
+
+            # Add to batch lists with unique ID
             batch_embeddings.append(embedding_vector)
             batch_metadatas.append(metadata)
-            batch_doc_ids.append(embedding_cid)
+            # Create unique ID by combining embedding CID with index
+            unique_id = f"{embedding_cid}_{i}"
+            batch_doc_ids.append(unique_id)
 
         # Perform batch insert if we have valid documents
         successful_inserts = 0
