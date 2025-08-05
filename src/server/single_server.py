@@ -1,11 +1,11 @@
 # Create new file: src/server/single_server.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import json
 import os
 import sys
-import itertools
+
 import asyncio
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,17 +47,9 @@ class EvaluationRequest(BaseModel):
 
 class IngestGDriveRequest(BaseModel):
     drive_url: str = Field(..., description="Public Google Drive folder URL")
-    converters: Optional[List[str]] = Field(
-        default=["markitdown"], 
-        description="List of converters to use (marker, openai, markitdown)"
-    )
-    chunkers: Optional[List[str]] = Field(
-        default=["recursive"], 
-        description="List of chunkers to use (fixed_length, recursive, markdown_aware, semantic_split)"
-    )
-    embedders: Optional[List[str]] = Field(
-        default=["bge"], 
-        description="List of embedders to use (openai, bge, nomic, instructor)"
+    processing_combinations: List[Tuple[str, str, str]] = Field(
+        default=[("markitdown", "recursive", "bge")], 
+        description="List of (converter, chunker, embedder) combinations to process"
     )
     user_email: str
 
@@ -127,7 +119,7 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
     
     This endpoint scrapes all PDFs from a public Google Drive folder
     and downloads them to a user-specific papers directory.
-    It also creates a Cartesian product of all converter, chunker, and embedder combinations.
+    It processes the provided list of (converter, chunker, embedder) combinations.
     """
     # Create user-specific logger for this request
     user_logger = get_user_logger(request.user_email, "gdrive_ingestion")
@@ -143,32 +135,30 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
                 detail="Invalid Google Drive URL. Please provide a valid Google Drive folder link."
             )
         
-        # Validate component lists
+        # Validate component combinations
         valid_converters = ["marker", "openai", "markitdown"]
         valid_chunkers = ["fixed_length", "recursive", "markdown_aware", "semantic_split"]
         valid_embedders = ["openai", "bge", "bgelarge", "nomic", "instructor"]
         
-        # Validate requested components
-        for converter in request.converters:
+        # Validate each combination tuple
+        for i, (converter, chunker, embedder) in enumerate(request.processing_combinations):
             if converter not in valid_converters:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Invalid converter '{converter}'. Valid options: {valid_converters}"
+                    detail=f"Invalid converter '{converter}' in combination {i+1}. Valid options: {valid_converters}"
                 )
-        
-        for chunker in request.chunkers:
             if chunker not in valid_chunkers:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Invalid chunker '{chunker}'. Valid options: {valid_chunkers}"
+                    detail=f"Invalid chunker '{chunker}' in combination {i+1}. Valid options: {valid_chunkers}"
                 )
-        
-        for embedder in request.embedders:
             if embedder not in valid_embedders:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Invalid embedder '{embedder}'. Valid options: {valid_embedders}"
+                    detail=f"Invalid embedder '{embedder}' in combination {i+1}. Valid options: {valid_embedders}"
                 )
+        
+        user_logger.debug(f"Validated {len(request.processing_combinations)} processing combinations")
         
         papers_directory = PROJECT_ROOT / "papers"
 
@@ -178,12 +168,8 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         # Create directories if they don't exist
         os.makedirs(user_papers_dir, exist_ok=True)
         
-        # Generate Cartesian product of all combinations
-        processing_combinations = list(itertools.product(
-            request.converters,
-            request.chunkers,
-            request.embedders
-        ))
+        # Use the provided processing combinations directly
+        processing_combinations = request.processing_combinations
         
         combination_strings = [
             f"{converter}_{chunker}_{embedder}"

@@ -62,7 +62,6 @@ def test_processor():
     # Process configuration
     processing_config = config["processing"]
     author_config = config["author"]
-    api_keys = config["api_keys"]
 
     # Setup paths
     papers_directory = PROJECT_ROOT / processing_config["papers_directory"]
@@ -153,7 +152,6 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
     
     # Process configuration
     author_config = config["author"]
-    api_keys = config["api_keys"]
 
     # Setup paths
     papers_directory = Path(user_papers_dir)
