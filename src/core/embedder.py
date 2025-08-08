@@ -6,6 +6,8 @@ using various embedding models including OpenAI's API with multi-GPU support.
 """
 
 import os
+import time
+from pathlib import Path
 from functools import lru_cache
 from typing import List, Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -17,6 +19,7 @@ from sentence_transformers import SentenceTransformer
 
 from src.types.embedder import EmbedderType, Embedding, BatchEmbedderFunc
 from src.utils.logging_utils import get_logger, get_user_logger
+from src.utils.file_lock import file_lock, PROJECT_ROOT
 from src.utils.utils import download_from_url
 
 # Get module logger
@@ -77,6 +80,87 @@ def setup_gpu_config():
         "gpu_devices": gpu_devices,
         "use_multi_gpu": use_multi_gpu
     }
+
+
+def _compute_gpu_indices_from_split() -> List[int]:
+    """Compute list of GPU indices to be used based on GPU_SPLIT, preferring higher indices.
+
+    Returns an empty list if CUDA is unavailable or no GPUs are visible.
+    """
+    if not torch.cuda.is_available():
+        return []
+
+    total_gpus = torch.cuda.device_count()
+    if total_gpus <= 0:
+        return []
+
+    gpu_split = float(os.getenv("GPU_SPLIT", "0.75"))
+    # Determine how many GPUs to expose via locking
+    gpus_to_use = 1 if total_gpus == 1 else min(total_gpus, max(1, int(total_gpus * gpu_split)))
+    gpu_start_idx = 0 if total_gpus == 1 else total_gpus - gpus_to_use
+    return list(range(gpu_start_idx, gpu_start_idx + gpus_to_use))
+
+
+def _encode_on_device(model_loader_func, texts: List[str], batch_size: int, device: torch.device) -> List[List[float]]:
+    """Helper to encode texts on a specific device, returning CPU lists."""
+    model = model_loader_func(device)
+
+    all_embeddings: List[List[float]] = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+        embeddings = model.encode(batch, show_progress_bar=False, convert_to_tensor=True)
+        if torch.is_tensor(embeddings):
+            all_embeddings.extend(embeddings.cpu().tolist())
+        else:
+            all_embeddings.extend(embeddings.tolist() if hasattr(embeddings, 'tolist') else list(embeddings))
+    return all_embeddings
+
+
+def single_gpu_batch_encode(model_loader_func, texts: List[str], batch_size: int, user_email: str = None) -> List[Embedding]:
+    """
+    Encode texts using a SINGLE GPU selected via a lock file.
+
+    - Creates up to N lock files (N derived from GPU_SPLIT and visible CUDA devices)
+    - Acquires exactly one lock (one GPU index) for the duration of this call
+    - Falls back to CPU if no GPU available or lock cannot be acquired within timeout
+    """
+    embed_logger = get_user_logger(user_email, "embedder")
+
+    gpu_indices = _compute_gpu_indices_from_split()
+    locks_dir = PROJECT_ROOT / "temp" / "gpu_locks"
+    locks_dir.mkdir(parents=True, exist_ok=True)
+
+    total_timeout_sec = int(os.getenv("GPU_LOCK_TOTAL_TIMEOUT", "600"))
+    retry_sleep_sec = float(os.getenv("GPU_LOCK_RETRY_SLEEP", "0.2"))
+
+    # If no CUDA GPUs, run on CPU directly
+    if not gpu_indices:
+        embed_logger.info("No GPUs available; running on CPU")
+        return _encode_on_device(model_loader_func, texts, batch_size, torch.device("cpu"))
+
+    start_time = time.time()
+    while True:
+        # Try to acquire any available GPU lock non-blockingly
+        for gpu_idx in gpu_indices:
+            lock_path = locks_dir / f"gpu_{gpu_idx}.lock"
+            try:
+                with file_lock(lock_path, timeout=0):
+                    # Lock acquired for this gpu_idx
+                    gpu_name = torch.cuda.get_device_name(gpu_idx)
+                    memory_gb = torch.cuda.get_device_properties(gpu_idx).total_memory / 1024**3
+                    embed_logger.info(f"Acquired GPU lock -> idx={gpu_idx}, name={gpu_name} ({memory_gb:.1f} GB)")
+                    device = torch.device(f"cuda:{gpu_idx}")
+                    return _encode_on_device(model_loader_func, texts, batch_size, device)
+            except TimeoutError:
+                # Lock busy; try next GPU
+                continue
+
+        # If none were available, check timeout and retry
+        if time.time() - start_time > total_timeout_sec:
+            embed_logger.warning("Timed out acquiring any GPU lock; falling back to CPU")
+            return _encode_on_device(model_loader_func, texts, batch_size, torch.device("cpu"))
+
+        time.sleep(retry_sleep_sec)
 
 
 def process_batch_on_gpu(model_loader_func, batch_texts: List[str], device: torch.device, batch_idx: int) -> Dict:
@@ -271,11 +355,9 @@ def _load_bge(device: torch.device) -> SentenceTransformer:
 def bge_batch(texts: List[str], batch_size: int = 32, user_email: str = None) -> List[Embedding]:
     """Embed multiple texts using BGE model in batches with multi-GPU support."""
     embed_logger = get_user_logger(user_email, "embedder")
-    embed_logger.info(f"Starting BGE batch embedding for {len(texts)} texts")
-    
-    embeddings = multi_gpu_batch_encode(_load_bge, texts, batch_size, user_email)
-    
-    embed_logger.info(f"Completed BGE batch embedding for {len(texts)} texts")
+    embed_logger.info(f"Starting BGE batch embedding for {len(texts)} texts (single-GPU lock mode)")
+    embeddings = single_gpu_batch_encode(_load_bge, texts, batch_size, user_email)
+    embed_logger.info(f"Completed BGE batch embedding for {len(texts)} texts (single-GPU lock mode)")
     return embeddings
 
 
@@ -289,11 +371,9 @@ def _load_bge_large(device: torch.device) -> SentenceTransformer:
 def bgelarge_batch(texts: List[str], batch_size: int = 32, user_email: str = None) -> List[Embedding]:
     """Embed multiple texts using BGE Large model in batches with multi-GPU support."""
     embed_logger = get_user_logger(user_email, "embedder")
-    embed_logger.info(f"Starting BGE-Large batch embedding for {len(texts)} texts")
-    
-    embeddings = multi_gpu_batch_encode(_load_bge_large, texts, batch_size, user_email)
-    
-    embed_logger.info(f"Completed BGE-Large batch embedding for {len(texts)} texts")
+    embed_logger.info(f"Starting BGE-Large batch embedding for {len(texts)} texts (single-GPU lock mode)")
+    embeddings = single_gpu_batch_encode(_load_bge_large, texts, batch_size, user_email)
+    embed_logger.info(f"Completed BGE-Large batch embedding for {len(texts)} texts (single-GPU lock mode)")
     return embeddings
 
 

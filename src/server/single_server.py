@@ -14,7 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.query.evaluation_agent import EvaluationAgent
 from src.utils.gdrive_scraper import scrape_gdrive_pdfs
 from src.core.processor_main import process_combination
-from src.db.db_creator_main import create_user_database
 from src.utils.logging_utils import get_user_logger
 
 # Setup FastAPI app
