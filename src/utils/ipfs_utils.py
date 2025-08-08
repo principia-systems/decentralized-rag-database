@@ -33,7 +33,6 @@ class IPFSClient:
             socket_path: Unix socket path for local IPFS (required for local mode)
         """
         self.mode = mode or os.getenv('IPFS_MODE', 'lighthouse')
-        logger.info(f"DEBUG: IPFSClient initializing with mode: {self.mode}")
         
         if self.mode == 'lighthouse':
             self.api_key = api_key or os.getenv('LIGHTHOUSE_TOKEN')
@@ -41,24 +40,20 @@ class IPFSClient:
                 raise ValueError("API key required for Lighthouse mode")
             self.api_url = "https://node.lighthouse.storage/api/v0/add"
             self.gateway_url = "https://gateway.lighthouse.storage/ipfs"
-            logger.info(f"DEBUG: Lighthouse mode configured with API URL: {self.api_url}")
             
         elif self.mode == 'local':
             self.socket_path = socket_path or os.getenv('IPFS_SOCKET_PATH', '/root/.ipfs/api.sock')
-            logger.info(f"DEBUG: Local mode, checking socket at: {self.socket_path}")
             if not os.path.exists(self.socket_path):
                 raise ValueError(f"IPFS socket not found at {self.socket_path}")
             
             # Follow the exact pattern from the user's working example
             encoded = urllib.parse.quote_plus(self.socket_path)
             self.base_url = f"http+unix://{encoded}/api/v0"
-            logger.info(f"DEBUG: Local mode base_url: {self.base_url}")
             
             # Create a session that speaks HTTP over UDS
             self.ipfs_unix_session = requests_unixsocket.Session()
             self.ipfs_unix_session.mount("http+unix://", requests_unixsocket.UnixAdapter())
             self.gateway_url = os.getenv('IPFS_GATEWAY_URL', 'http://localhost:8080/ipfs')
-            logger.info(f"DEBUG: Local mode session created successfully")
             
         else:
             raise ValueError(f"Invalid IPFS mode: {mode}. Must be 'lighthouse' or 'local'")
@@ -76,8 +71,6 @@ class IPFSClient:
         filepath = Path(filepath)
         if not filepath.exists():
             raise FileNotFoundError(f"File not found: {filepath}")
-        
-        logger.info(f"DEBUG: Uploading file {filepath} using mode: {self.mode}")
             
         if self.mode == 'lighthouse':
             with open(filepath, 'rb') as f:
@@ -91,10 +84,6 @@ class IPFSClient:
             files = {
                 "file": (filepath.name, file_content, "application/octet-stream")
             }
-            logger.info(f"DEBUG: Making POST request to: {self.base_url}/add?pin=true")
-            logger.info(f"DEBUG: Session type: {type(self.ipfs_unix_session)}")
-            logger.info(f"DEBUG: Session object: {self.ipfs_unix_session}")
-            logger.info(f"DEBUG: Has session.post method: {hasattr(self.ipfs_unix_session, 'post')}")
             
             response = self.ipfs_unix_session.post(f"{self.base_url}/add?pin=true", files=files)
         
