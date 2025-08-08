@@ -8,6 +8,7 @@ using various embedding models including OpenAI's API with multi-GPU support.
 import os
 import time
 from pathlib import Path
+import math
 from functools import lru_cache
 from typing import List, Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -95,8 +96,8 @@ def _compute_gpu_indices_from_split() -> List[int]:
         return []
 
     gpu_split = float(os.getenv("GPU_SPLIT", "0.75"))
-    # Determine how many GPUs to expose via locking
-    gpus_to_use = 1 if total_gpus == 1 else min(total_gpus, max(1, int(total_gpus * gpu_split)))
+    # Determine how many GPUs to expose via locking (round UP for embedder share)
+    gpus_to_use = 1 if total_gpus == 1 else min(total_gpus, max(1, math.ceil(total_gpus * gpu_split)))
     gpu_start_idx = 0 if total_gpus == 1 else total_gpus - gpus_to_use
     return list(range(gpu_start_idx, gpu_start_idx + gpus_to_use))
 

@@ -6,6 +6,9 @@ using various methods including OpenAI's API and local tools.
 """
 
 import os
+import time
+import math
+import contextlib
 import textwrap
 import threading
 from typing import List, Optional, Dict
@@ -20,6 +23,13 @@ from openai import OpenAI
 
 from src.types.converter import ConverterType, ConverterFunc
 from src.utils.logging_utils import get_logger
+from src.utils.file_lock import file_lock, PROJECT_ROOT
+
+try:
+    import torch
+except Exception:
+    torch = None
+
 from src.utils.utils import download_from_url, extract
 
 # Get module logger
@@ -35,6 +45,74 @@ _marker_converter = None
 # Global lock to prevent concurrent markitdown model loading
 _markitdown_lock = threading.Lock()
 _markitdown_instance = None
+
+
+def _compute_converter_gpu_indices_from_split() -> list[int]:
+    """Compute converter GPU indices as the complementary set to the embedder.
+
+    - Embedder uses ceil(total_gpus * GPU_SPLIT) GPUs from the high end.
+    - Converter uses the remaining GPUs from the low end (round down).
+    - This ensures no overlap and that GPU 0 is preferred by converter when available.
+    """
+    if torch is None or not hasattr(torch, "cuda") or not torch.cuda.is_available():
+        return []
+
+    total_gpus = torch.cuda.device_count()
+    if total_gpus <= 0:
+        return []
+
+    gpu_split = float(os.getenv("GPU_SPLIT", "0.75"))
+    embedder_count = 1 if total_gpus == 1 else min(total_gpus, max(1, math.ceil(total_gpus * gpu_split)))
+    converter_count = max(0, total_gpus - embedder_count)
+
+    # Use the lowest indices [0 .. converter_count-1]
+    return list(range(converter_count))
+
+
+@contextlib.contextmanager
+def acquire_converter_gpu_lock_with_timeout(logger_prefix: str = "CONVERTER"):
+    """Context manager that yields the locked GPU index (or None if not acquired).
+
+    Holds the file lock for the duration of the with-block.
+    """
+    gpu_indices = _compute_converter_gpu_indices_from_split()
+    locks_dir = PROJECT_ROOT / "temp" / "gpu_locks"
+    locks_dir.mkdir(parents=True, exist_ok=True)
+
+    total_timeout_sec = int(os.getenv("GPU_LOCK_TOTAL_TIMEOUT", "600"))
+    retry_sleep_sec = float(os.getenv("GPU_LOCK_RETRY_SLEEP", "0.2"))
+
+    if not gpu_indices:
+        yield None
+        return
+
+    start_time = time.time()
+    while True:
+        for gpu_idx in gpu_indices:
+            lock_path = locks_dir / f"gpu_{gpu_idx}.lock"
+            try:
+                with file_lock(lock_path, timeout=0):
+                    # Log which GPU we locked
+                    try:
+                        if torch and torch.cuda.is_available():
+                            gpu_name = torch.cuda.get_device_name(gpu_idx)
+                            mem_gb = torch.cuda.get_device_properties(gpu_idx).total_memory / 1024**3
+                            logger.info(f"[{logger_prefix}] Acquired GPU lock -> idx={gpu_idx}, name={gpu_name} ({mem_gb:.1f} GB)")
+                        else:
+                            logger.info(f"[{logger_prefix}] Acquired GPU lock -> idx={gpu_idx}")
+                    except Exception:
+                        logger.info(f"[{logger_prefix}] Acquired GPU lock -> idx={gpu_idx}")
+                    yield gpu_idx
+                    return
+            except TimeoutError:
+                continue
+
+        if time.time() - start_time > total_timeout_sec:
+            logger.warning(f"[{logger_prefix}] Timed out acquiring converter GPU lock; proceeding without lock")
+            yield None
+            return
+
+        time.sleep(retry_sleep_sec)
 
 
 def convert_from_url(conversion_type: ConverterType, input_url: str, user_temp_dir: str = "./tmp") -> str:
@@ -72,63 +150,73 @@ def marker(input_path: str) -> str:
     global _marker_models, _marker_converter
     
     try:
-        # Ensure the input_path is a valid file
-        if not os.path.exists(input_path):
-            raise FileNotFoundError(f"Input path not found: {input_path}")
+        # Acquire converter-side GPU lock (prefer low indices; likely 0)
+        with acquire_converter_gpu_lock_with_timeout("MARKER") as locked_gpu_idx:
+            try:
+                if locked_gpu_idx is not None and torch is not None and hasattr(torch, "cuda") and torch.cuda.is_available():
+                    torch.cuda.set_device(locked_gpu_idx)
+            except Exception:
+                pass
 
-        # Check if the path is a file and a PDF
-        if os.path.isfile(input_path):
-            if input_path.lower().endswith(".pdf"):
-                input_pdf_paths = [input_path]
+            # Ensure the input_path is a valid file
+            if not os.path.exists(input_path):
+                raise FileNotFoundError(f"Input path not found: {input_path}")
+
+            # Check if the path is a file and a PDF
+            if os.path.isfile(input_path):
+                if input_path.lower().endswith(".pdf"):
+                    input_pdf_paths = [input_path]
+                else:
+                    raise ValueError(f"File at {input_path} is not a PDF.")
+
+            # Check if the path is a folder containing PDFs
+            elif os.path.isdir(input_path):
+                input_pdf_paths = [
+                    os.path.join(input_path, f)
+                    for f in os.listdir(input_path)
+                    if f.lower().endswith(".pdf")
+                ]
+                if not input_pdf_paths:
+                    raise ValueError(f"No PDF files found in directory: {input_path}")
             else:
-                raise ValueError(f"File at {input_path} is not a PDF.")
+                raise ValueError(f"Invalid input path: {input_path}")
 
-        # Check if the path is a folder containing PDFs
-        elif os.path.isdir(input_path):
-            input_pdf_paths = [
-                os.path.join(input_path, f)
-                for f in os.listdir(input_path)
-                if f.lower().endswith(".pdf")
-            ]
-            if not input_pdf_paths:
-                raise ValueError(f"No PDF files found in directory: {input_path}")
-        else:
-            raise ValueError(f"Invalid input path: {input_path}")
-
-        std_out = ""
-        
-        # Use thread-safe model loading and conversion
-        with _marker_lock:
-            if _marker_models is None or _marker_converter is None:
-                logger.info("Loading marker models (this may take a moment)...")
-                _marker_models = create_model_dict()
-                config_parser = ConfigParser(
-                    {
-                        "languages": "en",
-                        "output_format": "markdown",
-                    }
-                )
-                _marker_converter = PdfConverter(
-                    config=config_parser.generate_config_dict(),
-                    artifact_dict=_marker_models,
-                    processor_list=config_parser.get_processors(),
-                    renderer=config_parser.get_renderer(),
-                )
-                logger.info("Marker models loaded successfully")
+            std_out = ""
             
-            # Use the cached converter - now conversion happens inside the lock
-            converter = _marker_converter
-            
-            for pdf_path in input_pdf_paths:
-                rendered = converter(pdf_path)
-                rendered_markdown = rendered.markdown
-                std_out += rendered_markdown
+            # Use thread-safe model loading and conversion
+            with _marker_lock:
+                if _marker_models is None or _marker_converter is None:
+                    logger.info("Loading marker models (this may take a moment)...")
+                    _marker_models = create_model_dict()
+                    config_parser = ConfigParser(
+                        {
+                            "languages": "en",
+                            "output_format": "markdown",
+                        }
+                    )
+                    _marker_converter = PdfConverter(
+                        config=config_parser.generate_config_dict(),
+                        artifact_dict=_marker_models,
+                        processor_list=config_parser.get_processors(),
+                        renderer=config_parser.get_renderer(),
+                    )
+                    logger.info("Marker models loaded successfully")
+                
+                # Use the cached converter - now conversion happens inside the lock
+                converter = _marker_converter
+                
+                for pdf_path in input_pdf_paths:
+                    rendered = converter(pdf_path)
+                    rendered_markdown = rendered.markdown
+                    std_out += rendered_markdown
 
-        return std_out
+            return std_out
 
     except FileNotFoundError as e:
         print(f"File not found: {e}")
         return ""  # Return empty string in case of error
+    finally:
+        pass
 
 
 def extract_text_from_pdf(input_path: str) -> str:
@@ -187,37 +275,45 @@ def markitdown(input_path: str) -> str:
     global _markitdown_instance
     
     try:
-        # Ensure the input_path is a valid file
-        if not os.path.exists(input_path):
-            raise FileNotFoundError(f"Input path not found: {input_path}")
+        # Acquire converter-side GPU lock (prefer low indices; likely 0)
+        with acquire_converter_gpu_lock_with_timeout("MARKITDOWN") as locked_gpu_idx:
+            try:
+                if locked_gpu_idx is not None and torch is not None and hasattr(torch, "cuda") and torch.cuda.is_available():
+                    torch.cuda.set_device(locked_gpu_idx)
+            except Exception:
+                pass
 
-        # Check if the path is a file and a PDF
-        if os.path.isfile(input_path):
-            if input_path.lower().endswith(".pdf"):
-                input_pdf_path = input_path
+            # Ensure the input_path is a valid file
+            if not os.path.exists(input_path):
+                raise FileNotFoundError(f"Input path not found: {input_path}")
+
+            # Check if the path is a file and a PDF
+            if os.path.isfile(input_path):
+                if input_path.lower().endswith(".pdf"):
+                    input_pdf_path = input_path
+                else:
+                    raise ValueError(f"File at {input_path} is not a PDF.")
+            elif os.path.isdir(input_path):
+                raise ValueError(
+                    "Input path is a directory. Please specify a single PDF file path."
+                )
             else:
-                raise ValueError(f"File at {input_path} is not a PDF.")
-        elif os.path.isdir(input_path):
-            raise ValueError(
-                "Input path is a directory. Please specify a single PDF file path."
-            )
-        else:
-            raise ValueError(f"Invalid input path: {input_path}")
+                raise ValueError(f"Invalid input path: {input_path}")
 
-        # Use thread-safe model loading and conversion
-        with _markitdown_lock:
-            if _markitdown_instance is None:
-                logger.info("Loading MarkItDown instance (this may take a moment)...")
-                _markitdown_instance = MarkItDown(enable_plugins=False)
-                logger.info("MarkItDown instance loaded successfully")
-            
-            # Use the cached instance
-            md = _markitdown_instance
-            
-            # Perform conversion inside the lock
-            logger.info(f"Converting {input_pdf_path} using MarkItDown")
-            result = md.convert(input_pdf_path)
-            return result.text_content.strip()
+            # Use thread-safe model loading and conversion
+            with _markitdown_lock:
+                if _markitdown_instance is None:
+                    logger.info("Loading MarkItDown instance (this may take a moment)...")
+                    _markitdown_instance = MarkItDown(enable_plugins=False)
+                    logger.info("MarkItDown instance loaded successfully")
+                
+                # Use the cached instance
+                md = _markitdown_instance
+                
+                # Perform conversion inside the lock
+                logger.info(f"Converting {input_pdf_path} using MarkItDown")
+                result = md.convert(input_pdf_path)
+                return result.text_content.strip()
 
     except FileNotFoundError as e:
         logger.error(f"File not found: {e}")
@@ -225,3 +321,5 @@ def markitdown(input_path: str) -> str:
     except Exception as e:
         logger.error(f"An error occurred with MarkItDown: {e}")
         return ""
+    finally:
+        pass
