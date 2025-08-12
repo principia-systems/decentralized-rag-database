@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Any
 from pathlib import Path
 from src.utils.logging_utils import get_user_logger
 from src.query.evaluation_agent import EvaluationAgent
+from src.query.cross_encoder import CrossEncoderRanker
 from fastapi import FastAPI, HTTPException
 import json
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +11,7 @@ from src.db.db_creator_main import create_user_database
 import os
 import uuid
 from datetime import datetime
+import math
 
 # Define PROJECT_ROOT
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -54,6 +56,17 @@ class WhitelistInfoResponse(BaseModel):
 class WhitelistRemoveRequest(BaseModel):
     requester_email: str
     target_email: str
+
+class RerankRequest(BaseModel):
+    user_email: str
+    query: str
+    items: List[str]
+    model_preset: str = "msmarco-MiniLM-L-6-v2"
+    batch_size: int = 16
+    max_length: Optional[int] = 256
+    top_k: Optional[int] = None
+    descending: bool = True
+    device: Optional[str] = "cpu"  # default to CPU for consistent behavior
 
 def get_user_temp_dir(user_email: str) -> Path:
     """Get the temp directory path for a user"""
@@ -424,6 +437,47 @@ async def evaluate_endpoint(request: EvaluationRequest):
     except Exception as e:
         user_logger.error(f"Error in evaluation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/rerank")
+async def rerank_endpoint(request: RerankRequest):
+    """Rerank a list of items for a query using a cross-encoder model."""
+    user_logger = get_user_logger(request.user_email, "rerank")
+    try:
+        user_logger.info(
+            f"Reranking {len(request.items)} items using {request.model_preset}"
+        )
+
+        ranker = CrossEncoderRanker.from_preset(
+            request.model_preset,
+            device=request.device,
+            batch_size=request.batch_size,
+            max_length=request.max_length,
+            user_email=request.user_email,
+        )
+
+        ranked_pairs = ranker.rank_and_sort(
+            request.query,
+            request.items,
+            top_k=request.top_k,
+            descending=request.descending,
+            user_email=request.user_email,
+        )
+
+        results = []
+        for text, score in ranked_pairs:
+            safe_score = float(score)
+            if not math.isfinite(safe_score):
+                user_logger.warning(
+                    "Non-finite score encountered (score=%s). Converting to 0.0 for JSON compliance.",
+                    score,
+                )
+                safe_score = 0.0
+            results.append({"item": text, "score": safe_score})
+        user_logger.info("Successfully computed reranked results")
+        return {"success": True, "results": results}
+    except Exception as e:
+        user_logger.error(f"Error during rerank: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error during rerank: {str(e)}")
 
 @app.post("/api/database/create")
 async def create_database(request: CreateDatabaseRequest):

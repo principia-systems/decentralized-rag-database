@@ -30,7 +30,6 @@ MODEL_PRESETS: Dict[str, str] = {
     # BAAI bge rerankers
     "bge-reranker-base": "BAAI/bge-reranker-base",
     "bge-reranker-large": "BAAI/bge-reranker-large",
-    # Mixedbread
     "mxbai-rerank-base-v1": "mixedbread-ai/mxbai-rerank-base-v1",
 }
 
