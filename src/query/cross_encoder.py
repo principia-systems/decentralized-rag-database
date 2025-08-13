@@ -11,12 +11,16 @@ It supports several Hugging Face cross-encoder reranker models via
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
+import os
+import time
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import torch
 from sentence_transformers import CrossEncoder
 
 from src.utils.logging_utils import get_logger, get_user_logger
+from src.utils.file_lock import file_lock, PROJECT_ROOT
 
 
 logger = get_logger(__name__)
@@ -34,14 +38,45 @@ MODEL_PRESETS: Dict[str, str] = {
 }
 
 
-def _auto_detect_device() -> str:
-    """Return best available device string among cuda, mps, or cpu."""
-    if torch.cuda.is_available():
-        return "cuda"
-    # mps for Apple Silicon (PyTorch 1.12+)
+def _preferred_non_cuda_device() -> str:
+    """Prefer mps over cpu when CUDA is not available."""
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         return "mps"
     return "cpu"
+
+
+def _visible_cuda_indices() -> List[int]:
+    """Return a list of visible CUDA device indices. Empty if no CUDA."""
+    if not torch.cuda.is_available():
+        return []
+    try:
+        count = torch.cuda.device_count()
+    except Exception:
+        count = 0
+    return list(range(count)) if count and count > 0 else []
+
+
+def _gpu_locks_dir() -> os.PathLike:
+    path = PROJECT_ROOT / "temp" / "gpu_locks"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+@lru_cache(maxsize=16)
+def _get_cross_encoder(
+    model_id: str,
+    device_str: str,
+    max_length: Optional[int],
+    revision: Optional[str],
+    trust_remote_code: bool,
+) -> CrossEncoder:
+    """Load and cache a CrossEncoder on a specific device."""
+    return CrossEncoder(
+        model_id,
+        device=device_str,
+        max_length=max_length,
+        revision=revision,
+        trust_remote_code=trust_remote_code,
+    )
 
 
 @dataclass
@@ -73,24 +108,15 @@ class CrossEncoderRanker:
         self.user_email = user_email
 
         model_id = MODEL_PRESETS.get(config.model_name_or_preset, config.model_name_or_preset)
-        device = config.device or _auto_detect_device()
-
         init_logger = (
             get_user_logger(user_email, "cross_encoder") if user_email else logger
         )
         init_logger.info(
-            f"Initializing CrossEncoder model='{model_id}' device='{device}' batch_size={config.batch_size}"
+            f"Initializing CrossEncoder model='{model_id}' (CUDA round-robin if available) batch_size={config.batch_size}"
         )
 
-        # sentence_transformers.CrossEncoder handles tokenization and model forward
-        # It accepts device as a torch.device string (e.g., "cuda", "cpu", "mps")
-        self._encoder = CrossEncoder(
-            model_id,
-            device=device,
-            max_length=self.config.max_length,
-            revision=config.revision,
-            trust_remote_code=config.trust_remote_code,
-        )
+        # Defer model instantiation to request time with per-device cache
+        self._model_id = model_id
 
     @classmethod
     def from_preset(
@@ -143,21 +169,61 @@ class CrossEncoderRanker:
         )
         user_logger.debug(f"Scoring {len(pairs)} pairs with cross-encoder")
 
-        # sentence_transformers.CrossEncoder.predict returns a numpy array of scores
-        scores = self._encoder.predict(
-            pairs,
-            batch_size=self.config.batch_size,
-            convert_to_numpy=True,
-            show_progress_bar=False,
-        )
+        # Request-level GPU binding with lock-based round-robin assignment
+        cuda_indices = _visible_cuda_indices()
+        total_timeout_sec = int(os.getenv("CROSS_ENCODER_GPU_LOCK_TOTAL_TIMEOUT", "600"))
+        retry_sleep_sec = float(os.getenv("CROSS_ENCODER_GPU_LOCK_RETRY_SLEEP", "0.2"))
 
-        # Convert to plain Python floats for portability/serialization
-        float_scores = [float(s) for s in scores]
-        user_logger.debug(
-            "Completed scoring. Example scores: %s",
-            float_scores[:5] if len(float_scores) > 5 else float_scores,
-        )
-        return float_scores
+        def _predict_on_device(device_str: str) -> List[float]:
+            encoder = _get_cross_encoder(
+                self._model_id,
+                device_str,
+                self.config.max_length,
+                self.config.revision,
+                self.config.trust_remote_code,
+            )
+            scores_np = encoder.predict(
+                pairs,
+                batch_size=self.config.batch_size,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )
+            return [float(s) for s in scores_np]
+
+        if cuda_indices:
+            # Dynamic round-robin lock over all visible CUDA devices
+            locks_dir = _gpu_locks_dir()
+            # Always start from GPU index 0
+            start_from = 0
+            order = list(range(start_from, len(cuda_indices))) + list(range(0, start_from))
+
+            start_time = time.time()
+            while True:
+                for local_idx in order:
+                    gpu_idx = cuda_indices[local_idx]
+                    lock_path = locks_dir / f"gpu_{gpu_idx}.lock"
+                    try:
+                        with file_lock(lock_path, timeout=0):
+                            gpu_name = torch.cuda.get_device_name(gpu_idx)
+                            mem_gb = torch.cuda.get_device_properties(gpu_idx).total_memory / 1024**3
+                            user_logger.info(
+                                f"Acquired GPU lock -> idx={gpu_idx}, name={gpu_name} ({mem_gb:.1f} GB)"
+                            )
+                            return _predict_on_device(f"cuda:{gpu_idx}")
+                    except TimeoutError:
+                        continue
+
+                if time.time() - start_time > total_timeout_sec:
+                    user_logger.warning(
+                        "Timed out acquiring any GPU lock; falling back to non-CUDA device"
+                    )
+                    break
+                time.sleep(retry_sleep_sec)
+
+        # Fallback to non-CUDA device (prefer MPS on Apple Silicon)
+        return _predict_on_device(_preferred_non_cuda_device())
+
+        # Note: we return inside device execution paths
 
     def rank_and_sort(
         self,
