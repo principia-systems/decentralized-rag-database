@@ -331,5 +331,6 @@ class IPFSNeo4jGraph:
             "keywords": ["Unknown Keywords"],
             "publication_date": "Unknown Date",
             "journal": "Unknown Journal",
-            "citation": "Unknown Authors. (Unknown Date). Unknown Title. Unknown Journal. No DOI available"
+            "citation": "Unknown Authors. (Unknown Date). Unknown Title. Unknown Journal. No DOI available",
+            "pdf_filename": "Unknown Filename"
         }

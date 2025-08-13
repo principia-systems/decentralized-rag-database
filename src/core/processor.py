@@ -164,7 +164,7 @@ class Processor:
             self.logger.error(f"Failed to retrieve IPFS content for CID {cid}: {e}")
             return None
 
-    def _extract_metadata_with_openrouter(self, markdown_content: str, model_name: str = "openai/gpt-4o-mini") -> Optional[Dict[str, Any]]:
+    def _extract_metadata_with_openrouter(self, markdown_content: str, model_name: str = "openai/gpt-5") -> Optional[Dict[str, Any]]:
         """
         Extract metadata from markdown content using OpenRouter API.
         
@@ -270,7 +270,7 @@ class Processor:
             self.logger.error(f"Unexpected error during metadata extraction: {e}")
             return None
 
-    def _create_or_get_metadata_node(self, pdf_cid: str, converted_text: str) -> Optional[str]:
+    def _create_or_get_metadata_node(self, pdf_cid: str, converted_text: str, doc_id: Optional[str] = None) -> Optional[str]:
         """
         Create or retrieve a metadata node for the given PDF.
         
@@ -295,6 +295,12 @@ class Processor:
         if not extracted_metadata:
             self.logger.warning("Failed to extract metadata with OpenRouter, using default metadata")
             extracted_metadata = self.graph_db.default_metadata()
+        
+        # Add doc_id to metadata if provided
+        if doc_id:
+            extracted_metadata["pdf_filename"] = doc_id
+        else:
+            extracted_metadata["pdf_filename"] = "Unknown"
         
         # Serialize metadata as JSON
         try:
@@ -455,7 +461,8 @@ class Processor:
                 self.logger.info("Creating or retrieving metadata node...")
                 metadata_cid = self._create_or_get_metadata_node(
                     metadata["pdf_ipfs_cid"], 
-                    self.convert_cache[converter_func]
+                    self.convert_cache[converter_func],
+                    doc_id
                 )
                 if metadata_cid:
                     all_authored_nodes.append(metadata_cid)
