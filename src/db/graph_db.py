@@ -9,7 +9,6 @@ import os
 from typing import List, Tuple, Optional
 
 import certifi
-import requests
 from neo4j import GraphDatabase
 
 from src.utils.logging_utils import get_logger
@@ -88,7 +87,7 @@ class IPFSNeo4jGraph:
         """Add multiple IPFS CIDs as nodes in Neo4j in a single transaction."""
         if not cids:
             return
-            
+
         try:
             with self.driver.session() as session:
                 # Use UNWIND to process multiple CIDs in one query
@@ -122,20 +121,20 @@ class IPFSNeo4jGraph:
     def create_relationships_batch(self, relationships: List[Tuple[str, str, str]]):
         """
         Create multiple relationships in a single transaction.
-        
+
         Args:
             relationships: List of tuples (source_cid, target_cid, relationship_type)
         """
         if not relationships:
             return
-            
+
         # Group relationships by type for more efficient querying
         relationships_by_type = {}
         for source, target, rel_type in relationships:
             if rel_type not in relationships_by_type:
                 relationships_by_type[rel_type] = []
             relationships_by_type[rel_type].append((source, target))
-        
+
         try:
             with self.driver.session() as session:
                 for rel_type, pairs in relationships_by_type.items():
@@ -147,7 +146,9 @@ class IPFSNeo4jGraph:
                         MERGE (a)-[:{rel_type}]->(b)
                     """
                     session.run(query, pairs=pairs)
-                    self.logger.info(f"Batch created {len(pairs)} relationships of type {rel_type}")
+                    self.logger.info(
+                        f"Batch created {len(pairs)} relationships of type {rel_type}"
+                    )
         except Exception as e:
             self.logger.error(f"Failed to batch create relationships: {e}")
 
@@ -266,10 +267,10 @@ class IPFSNeo4jGraph:
     def get_existing_metadata_cid(self, pdf_cid: str) -> Optional[str]:
         """
         Check if metadata already exists for the given PDF CID.
-        
+
         Args:
             pdf_cid: The PDF CID to check for existing metadata
-            
+
         Returns:
             The metadata CID if it exists, None otherwise
         """
@@ -293,24 +294,26 @@ class IPFSNeo4jGraph:
     def create_metadata_node(self, pdf_cid: str, metadata_cid: str) -> bool:
         """
         Create a metadata node and link it to the PDF node.
-        
+
         Args:
             pdf_cid: The PDF CID to link metadata to
             metadata_cid: The metadata CID to create and link
-            
+
         Returns:
             True if successful, False otherwise
         """
         try:
             # Add metadata node to graph
             self.add_ipfs_node(metadata_cid)
-            
+
             # Create relationship between PDF and metadata
             self.create_relationship(pdf_cid, metadata_cid, "HAS_METADATA")
-            
-            self.logger.info(f"Created metadata node {metadata_cid} linked to PDF {pdf_cid}")
+
+            self.logger.info(
+                f"Created metadata node {metadata_cid} linked to PDF {pdf_cid}"
+            )
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error creating metadata node: {e}")
             return False
@@ -332,5 +335,5 @@ class IPFSNeo4jGraph:
             "publication_date": "Unknown Date",
             "journal": "Unknown Journal",
             "citation": "Unknown Authors. (Unknown Date). Unknown Title. Unknown Journal. No DOI available",
-            "pdf_filename": "Unknown Filename"
+            "pdf_filename": "Unknown Filename",
         }

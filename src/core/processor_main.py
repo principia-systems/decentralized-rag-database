@@ -5,11 +5,8 @@ This module contains the entry point for the processor, which handles
 PDF processing, conversion, chunking, embedding, and storage in various databases.
 """
 
-import hashlib
 import os
-import subprocess
 import asyncio
-import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List
@@ -85,7 +82,6 @@ def test_processor():
         db_name = f"{converter}_{chunker}_{embedder}"
         db_config["db_name"] = db_name
 
-
     processor = Processor(
         authorPublicKey=author_config["public_key"],
         user_email=author_config["email"],
@@ -101,10 +97,10 @@ def test_processor():
         # Clean up: Delete all PDF files after processing
         logger.info("Starting cleanup: Deleting processed PDF files...")
         deleted_files = []
-        
+
         for paper_path in papers:
             try:
-                if os.path.exists(paper_path) and paper_path.lower().endswith('.pdf'):
+                if os.path.exists(paper_path) and paper_path.lower().endswith(".pdf"):
                     filename = os.path.basename(paper_path)
                     os.remove(paper_path)
                     deleted_files.append(filename)
@@ -112,7 +108,9 @@ def test_processor():
             except Exception as e:
                 logger.error(f"Error deleting {paper_path}: {str(e)}")
 
-        logger.info(f"Cleanup complete: Deleted {len(deleted_files)} PDF files from papers/ directory")
+        logger.info(
+            f"Cleanup complete: Deleted {len(deleted_files)} PDF files from papers/ directory"
+        )
     except Exception as e:
         logger.error(f"Error in test_processor: {e}")
         raise
@@ -130,10 +128,17 @@ def _process_single_paper_sync(processor, paper_path, databases):
         return False, str(e)
 
 
-async def process_combination(converter: str, chunker: str, embedder: str, papers_list: List[str], user_papers_dir: str, user_email: str):
+async def process_combination(
+    converter: str,
+    chunker: str,
+    embedder: str,
+    papers_list: List[str],
+    user_papers_dir: str,
+    user_email: str,
+):
     """
     Process papers for a specific combination of converter, chunker, and embedder.
-    
+
     Args:
         converter: The converter to use (e.g., 'markitdown', 'marker', 'openai')
         chunker: The chunker to use (e.g., 'paragraph', 'sentence', 'word', 'fixed_length')
@@ -144,12 +149,12 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
     """
     # Create user-specific logger for this processing session
     user_logger = get_user_logger(user_email, "processor")
-    
+
     user_logger.info(f"Processing combination: {converter}_{chunker}_{embedder}")
-    
+
     # Load configuration
     config = load_config()
-    
+
     # Process configuration
     author_config = config["author"]
 
@@ -161,9 +166,9 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
         "converter": converter,
         "chunker": chunker,
         "embedder": embedder,
-        "db_name": f"{converter}_{chunker}_{embedder}"
+        "db_name": f"{converter}_{chunker}_{embedder}",
     }
-    
+
     databases = [db_config]
 
     processor = Processor(
@@ -176,12 +181,14 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
     for paper_filename in papers_list:
         # Construct full path to paper
         paper_path = papers_directory / paper_filename
-        
+
         if not paper_path.exists():
             user_logger.warning(f"Paper not found: {paper_path}")
             continue
-            
-        user_logger.info(f"Processing {paper_path} with {converter}_{chunker}_{embedder}...")
+
+        user_logger.info(
+            f"Processing {paper_path} with {converter}_{chunker}_{embedder}..."
+        )
 
         try:
             # Run the CPU-intensive processing in a separate thread
@@ -193,14 +200,20 @@ async def process_combination(converter: str, chunker: str, embedder: str, paper
                 paper_path,
                 databases,
             )
-            
+
             if success:
-                user_logger.info(f"Successfully processed {paper_filename} with {converter}_{chunker}_{embedder}")
+                user_logger.info(
+                    f"Successfully processed {paper_filename} with {converter}_{chunker}_{embedder}"
+                )
                 increment_job_progress(user_email)
             else:
-                user_logger.error(f"Error processing {paper_filename} with {converter}_{chunker}_{embedder}: {error}")
+                user_logger.error(
+                    f"Error processing {paper_filename} with {converter}_{chunker}_{embedder}: {error}"
+                )
         except Exception as e:
-            user_logger.error(f"Error processing {paper_filename} with {converter}_{chunker}_{embedder}: {e}")
+            user_logger.error(
+                f"Error processing {paper_filename} with {converter}_{chunker}_{embedder}: {e}"
+            )
 
         # Small async sleep to yield control back to the event loop
         await asyncio.sleep(0.1)
@@ -210,6 +223,7 @@ def increment_job_progress(user_email):
     """Increment completed job count for user - using thread-safe implementation"""
     user_logger = get_user_logger(user_email, "job_progress")
     from src.utils.file_lock import increment_job_progress_safe
+
     success = increment_job_progress_safe(user_email, 1)
     if not success:
         increment_job_progress_safe(user_email, 1)

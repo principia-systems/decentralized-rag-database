@@ -7,7 +7,6 @@ with scientific document data for the system.
 
 import os
 from pathlib import Path
-from typing import List
 import json
 
 import yaml
@@ -45,17 +44,16 @@ def load_config():
         raise
 
 
-
 def create_user_database(user_email: str):
     """
     Create and populate the database from IPFS CIDs for a specific user.
-    
+
     Args:
         user_email: Email of the user for creating user-specific database
     """
     # Create user-specific logger for this operation
     user_logger = get_user_logger(user_email, "c")
-    
+
     # Load configuration
     config = load_config()
 
@@ -84,7 +82,9 @@ def create_user_database(user_email: str):
     mapping_embed_file_path = user_temp_path / "mapping_embed.json"
 
     if not mappings_file_path.exists():
-        user_logger.error(f"No mappings.json file found for user {user_email}. Please run processor first.")
+        user_logger.error(
+            f"No mappings.json file found for user {user_email}. Please run processor first."
+        )
         user_logger.error(f"Checked path: {mappings_file_path}")
         return
 
@@ -102,16 +102,20 @@ def create_user_database(user_email: str):
         try:
             with open(mapping_embed_file_path, "r") as file:
                 mapping_embed = json.load(file)
-            user_logger.info(f"Loaded existing mapping_embed.json with {len(mapping_embed)} entries")
+            user_logger.info(
+                f"Loaded existing mapping_embed.json with {len(mapping_embed)} entries"
+            )
         except Exception as e:
-            user_logger.warning(f"Error loading mapping_embed.json: {e}. Starting fresh.")
+            user_logger.warning(
+                f"Error loading mapping_embed.json: {e}. Starting fresh."
+            )
             mapping_embed = {}
     else:
         user_logger.info("No existing mapping_embed.json found. Starting fresh.")
 
     # Find what needs to be processed (items in mappings but not in mapping_embed)
     items_to_process = {}
-    
+
     for pdf_cid, db_combinations in mappings.items():
         if pdf_cid not in mapping_embed:
             # CID not embedded at all
@@ -119,7 +123,9 @@ def create_user_database(user_email: str):
         else:
             # CID exists, check which combinations are missing
             existing_combinations = set(mapping_embed[pdf_cid])
-            new_combinations = [combo for combo in db_combinations if combo not in existing_combinations]
+            new_combinations = [
+                combo for combo in db_combinations if combo not in existing_combinations
+            ]
             if new_combinations:
                 items_to_process[pdf_cid] = new_combinations
 
@@ -127,14 +133,16 @@ def create_user_database(user_email: str):
         user_logger.info("No new items to process. All mappings are already embedded.")
         return
 
-    user_logger.info(f"Found {sum(len(combos) for combos in items_to_process.values())} new CID-database combinations to process")
+    user_logger.info(
+        f"Found {sum(len(combos) for combos in items_to_process.values())} new CID-database combinations to process"
+    )
 
     # Get all unique database names from items to process
     db_names = set()
     for pdf_cid, db_combinations in items_to_process.items():
         for db_combination in db_combinations:
             db_names.add(db_combination)
-      
+
     user_logger.info(f"Discovered {len(db_names)} unique databases: {sorted(db_names)}")
 
     # Set up user-specific vector database path
@@ -145,52 +153,60 @@ def create_user_database(user_email: str):
 
     # Initialize database manager with the specific db names found in mappings
     vector_db_manager = VectorDatabaseManager(list(db_names), db_path=str(user_db_path))
-    
+
     create_db = DatabaseCreator(graph, vector_db_manager, user_email)
 
     # Process only the new CID-database combinations
     total_processed = 0
     successfully_processed = {}
-    
+
     for pdf_cid, db_combinations in items_to_process.items():
-        user_logger.info(f"Processing CID {pdf_cid} with {len(db_combinations)} new database combinations")
-        
+        user_logger.info(
+            f"Processing CID {pdf_cid} with {len(db_combinations)} new database combinations"
+        )
+
         successfully_processed[pdf_cid] = []
-        
+
         for db_combination in db_combinations:
             # Parse database combination (format: converter_chunker_embedder)
             # Handle case where chunker name might contain underscores (e.g., fixed_length)
             parts = db_combination.split("_")
             if len(parts) < 3:
-                user_logger.error(f"Invalid database combination format: {db_combination}")
+                user_logger.error(
+                    f"Invalid database combination format: {db_combination}"
+                )
                 continue
-            
+
             # For combinations like "markitdown_fixed_length_bge-large", we need to parse carefully
             # The format should be: converter_chunker_embedder
             # If we have more than 3 parts, the middle parts belong to the chunker
             converter = parts[0]
             embedder = parts[-1]  # Last part is always the embedder
             chunker = "_".join(parts[1:-1])  # Middle parts form the chunker name
-            
+
             # Construct relationship path for this combination
             relationship_path = [
                 f"CONVERTED_BY_{converter}",
                 f"CHUNKED_BY_{chunker}",
-                f"EMBEDDED_BY_{embedder}"
+                f"EMBEDDED_BY_{embedder}",
             ]
-            
+
             try:
                 create_db.process_paths(pdf_cid, relationship_path, db_combination)
                 successfully_processed[pdf_cid].append(db_combination)
                 total_processed += 1
             except Exception as e:
-                user_logger.error(f"Error processing {pdf_cid} with {db_combination}: {e}")
+                user_logger.error(
+                    f"Error processing {pdf_cid} with {db_combination}: {e}"
+                )
                 successfully_processed[pdf_cid].append(db_combination)
                 continue
 
     # Update mapping_embed.json with successfully processed items
     for pdf_cid, successful_combinations in successfully_processed.items():
-        if successful_combinations:  # Only update if we successfully processed some combinations
+        if (
+            successful_combinations
+        ):  # Only update if we successfully processed some combinations
             if pdf_cid in mapping_embed:
                 # Extend existing combinations
                 existing_set = set(mapping_embed[pdf_cid])
@@ -204,11 +220,15 @@ def create_user_database(user_email: str):
     try:
         with open(mapping_embed_file_path, "w") as file:
             json.dump(mapping_embed, file, indent=2)
-        user_logger.info(f"Updated mapping_embed.json with {total_processed} new entries")
+        user_logger.info(
+            f"Updated mapping_embed.json with {total_processed} new entries"
+        )
     except Exception as e:
         user_logger.error(f"Error saving mapping_embed.json: {e}")
 
-    user_logger.info(f"Completed processing {total_processed} CID-database combinations for user {user_email}")
+    user_logger.info(
+        f"Completed processing {total_processed} CID-database combinations for user {user_email}"
+    )
 
 
 def main():
@@ -218,10 +238,10 @@ def main():
     """
     # Load configuration
     config = load_config()
-    
+
     # Get user email from config
     user_email = config["user"]["email"]
-    
+
     # Call the user-specific database creation function
     create_user_database(user_email)
 

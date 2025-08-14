@@ -11,7 +11,7 @@ import math
 import contextlib
 import textwrap
 import threading
-from typing import List, Optional, Dict
+from typing import List, Dict
 
 import PyPDF2
 from dotenv import load_dotenv
@@ -62,7 +62,11 @@ def _compute_converter_gpu_indices_from_split() -> list[int]:
         return []
 
     gpu_split = float(os.getenv("GPU_SPLIT", "0.75"))
-    embedder_count = 1 if total_gpus == 1 else min(total_gpus, max(1, math.ceil(total_gpus * gpu_split)))
+    embedder_count = (
+        1
+        if total_gpus == 1
+        else min(total_gpus, max(1, math.ceil(total_gpus * gpu_split)))
+    )
     converter_count = max(0, total_gpus - embedder_count)
 
     # Use the lowest indices [0 .. converter_count-1]
@@ -96,26 +100,39 @@ def acquire_converter_gpu_lock_with_timeout(logger_prefix: str = "CONVERTER"):
                     try:
                         if torch and torch.cuda.is_available():
                             gpu_name = torch.cuda.get_device_name(gpu_idx)
-                            mem_gb = torch.cuda.get_device_properties(gpu_idx).total_memory / 1024**3
-                            logger.info(f"[{logger_prefix}] Acquired GPU lock -> idx={gpu_idx}, name={gpu_name} ({mem_gb:.1f} GB)")
+                            mem_gb = (
+                                torch.cuda.get_device_properties(gpu_idx).total_memory
+                                / 1024**3
+                            )
+                            logger.info(
+                                f"[{logger_prefix}] Acquired GPU lock -> idx={gpu_idx}, name={gpu_name} ({mem_gb:.1f} GB)"
+                            )
                         else:
-                            logger.info(f"[{logger_prefix}] Acquired GPU lock -> idx={gpu_idx}")
+                            logger.info(
+                                f"[{logger_prefix}] Acquired GPU lock -> idx={gpu_idx}"
+                            )
                     except Exception:
-                        logger.info(f"[{logger_prefix}] Acquired GPU lock -> idx={gpu_idx}")
+                        logger.info(
+                            f"[{logger_prefix}] Acquired GPU lock -> idx={gpu_idx}"
+                        )
                     yield gpu_idx
                     return
             except TimeoutError:
                 continue
 
         if time.time() - start_time > total_timeout_sec:
-            logger.warning(f"[{logger_prefix}] Timed out acquiring converter GPU lock; proceeding without lock")
+            logger.warning(
+                f"[{logger_prefix}] Timed out acquiring converter GPU lock; proceeding without lock"
+            )
             yield None
             return
 
         time.sleep(retry_sleep_sec)
 
 
-def convert_from_url(conversion_type: ConverterType, input_url: str, user_temp_dir: str = "./tmp") -> str:
+def convert_from_url(
+    conversion_type: ConverterType, input_url: str, user_temp_dir: str = "./tmp"
+) -> str:
     """Convert based on the specified conversion type."""
     download_path = download_from_url(url=input_url, output_folder=user_temp_dir)
 
@@ -148,12 +165,17 @@ def chunk_text(text: str, chunk_size: int = 4000) -> List[str]:
 def marker(input_path: str) -> str:
     """Convert text using the marker module, where input_path is either a path to pdf file or a path to a folder containing a set of pdf files."""
     global _marker_models, _marker_converter
-    
+
     try:
         # Acquire converter-side GPU lock (prefer low indices; likely 0)
         with acquire_converter_gpu_lock_with_timeout("MARKER") as locked_gpu_idx:
             try:
-                if locked_gpu_idx is not None and torch is not None and hasattr(torch, "cuda") and torch.cuda.is_available():
+                if (
+                    locked_gpu_idx is not None
+                    and torch is not None
+                    and hasattr(torch, "cuda")
+                    and torch.cuda.is_available()
+                ):
                     torch.cuda.set_device(locked_gpu_idx)
             except Exception:
                 pass
@@ -182,7 +204,7 @@ def marker(input_path: str) -> str:
                 raise ValueError(f"Invalid input path: {input_path}")
 
             std_out = ""
-            
+
             # Use thread-safe model loading and conversion
             with _marker_lock:
                 if _marker_models is None or _marker_converter is None:
@@ -201,10 +223,10 @@ def marker(input_path: str) -> str:
                         renderer=config_parser.get_renderer(),
                     )
                     logger.info("Marker models loaded successfully")
-                
+
                 # Use the cached converter - now conversion happens inside the lock
                 converter = _marker_converter
-                
+
                 for pdf_path in input_pdf_paths:
                     rendered = converter(pdf_path)
                     rendered_markdown = rendered.markdown
@@ -273,12 +295,17 @@ def openai(input_path: str) -> str:
 def markitdown(input_path: str) -> str:
     """Convert PDF to Markdown using the Microsoft MarkItDown library."""
     global _markitdown_instance
-    
+
     try:
         # Acquire converter-side GPU lock (prefer low indices; likely 0)
         with acquire_converter_gpu_lock_with_timeout("MARKITDOWN") as locked_gpu_idx:
             try:
-                if locked_gpu_idx is not None and torch is not None and hasattr(torch, "cuda") and torch.cuda.is_available():
+                if (
+                    locked_gpu_idx is not None
+                    and torch is not None
+                    and hasattr(torch, "cuda")
+                    and torch.cuda.is_available()
+                ):
                     torch.cuda.set_device(locked_gpu_idx)
             except Exception:
                 pass
@@ -303,13 +330,15 @@ def markitdown(input_path: str) -> str:
             # Use thread-safe model loading and conversion
             with _markitdown_lock:
                 if _markitdown_instance is None:
-                    logger.info("Loading MarkItDown instance (this may take a moment)...")
+                    logger.info(
+                        "Loading MarkItDown instance (this may take a moment)..."
+                    )
                     _markitdown_instance = MarkItDown(enable_plugins=False)
                     logger.info("MarkItDown instance loaded successfully")
-                
+
                 # Use the cached instance
                 md = _markitdown_instance
-                
+
                 # Perform conversion inside the lock
                 logger.info(f"Converting {input_pdf_path} using MarkItDown")
                 result = md.convert(input_pdf_path)

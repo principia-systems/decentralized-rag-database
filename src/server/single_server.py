@@ -4,9 +4,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Tuple
 import json
 import os
-import sys
 
-import asyncio
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,9 +16,7 @@ from src.utils.logging_utils import get_user_logger
 
 # Setup FastAPI app
 app = FastAPI(
-    title="SRC API",
-    description="API - a decentralized RAG database",
-    version="0.1.0"
+    title="SRC API", description="API - a decentralized RAG database", version="0.1.0"
 )
 
 # Add CORS middleware
@@ -36,6 +32,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 # Parent directory of the project (coophive folder)
 COOPHIVE_DIR = PROJECT_ROOT.parent
 
+
 # Define request/response models
 class EvaluationRequest(BaseModel):
     query: str
@@ -44,13 +41,15 @@ class EvaluationRequest(BaseModel):
     model_name: str = "openai/gpt-4o-mini"
     user_email: str
 
+
 class IngestGDriveRequest(BaseModel):
     drive_url: str = Field(..., description="Public Google Drive folder URL")
     processing_combinations: List[Tuple[str, str, str]] = Field(
-        default=[("markitdown", "recursive", "bge")], 
-        description="List of (converter, chunker, embedder) combinations to process"
+        default=[("markitdown", "recursive", "bge")],
+        description="List of (converter, chunker, embedder) combinations to process",
     )
     user_email: str
+
 
 class IngestGDriveResponse(BaseModel):
     success: bool
@@ -58,6 +57,7 @@ class IngestGDriveResponse(BaseModel):
     downloaded_files: List[str]
     total_files: int
     processing_combinations: List[str]
+
 
 class UserStatusResponse(BaseModel):
     user_email: str
@@ -67,27 +67,28 @@ class UserStatusResponse(BaseModel):
     papers_directory: str
     mappings_file_path: str
 
+
 @app.post("/api/evaluate")
 async def evaluate_endpoint(request: EvaluationRequest):
     """Endpoint for evaluation (maps to run_evaluation.sh)"""
     # Create user-specific logger for this request
     user_logger = get_user_logger(request.user_email, "evaluation")
-    
+
     try:
         user_logger.info(f"Evaluating query: {request.query}")
         user_logger.debug(f"DB Path: {request.db_path}")
         user_logger.debug(f"Model Name: {request.model_name}")
         user_logger.info(f"User Email: {request.user_email}")
-        
+
         # Construct user-specific database path if not provided
         if request.db_path is None:
             base_db_path = PROJECT_ROOT / "src" / "database" / request.user_email
             user_db_path = str(base_db_path)
         else:
             user_db_path = request.db_path
-        
+
         user_logger.info(f"Using database path: {user_db_path}")
-        
+
         # Initialize evaluation agent
         agent = EvaluationAgent(model_name=request.model_name)
 
@@ -97,135 +98,159 @@ async def evaluate_endpoint(request: EvaluationRequest):
             db_path=user_db_path,
             user_email=request.user_email,
         )
-        
+
         # Read the results from the JSON file
-        with open(results_file, 'r') as f:
+        with open(results_file, "r") as f:
             results = json.load(f)
-        
+
         user_logger.info("Successfully completed evaluation query")
         return results
     except Exception as e:
         user_logger.error(f"Error in evaluation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 class EmbedRequest(BaseModel):
     user_email: str
+
 
 @app.post("/api/ingest/gdrive", response_model=IngestGDriveResponse)
 async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
     """
     Ingest PDFs from a public Google Drive folder.
-    
+
     This endpoint scrapes all PDFs from a public Google Drive folder
     and downloads them to a user-specific papers directory.
     It processes the provided list of (converter, chunker, embedder) combinations.
     """
     # Create user-specific logger for this request
     user_logger = get_user_logger(request.user_email, "gdrive_ingestion")
-    
+
     try:
-        user_logger.info(f"Processing Google Drive ingestion for user: {request.user_email}")
+        user_logger.info(
+            f"Processing Google Drive ingestion for user: {request.user_email}"
+        )
         user_logger.info(f"Drive URL: {request.drive_url}")
-        
+
         # Validate the Google Drive URL
         if "drive.google.com" not in request.drive_url:
             raise HTTPException(
-                status_code=400, 
-                detail="Invalid Google Drive URL. Please provide a valid Google Drive folder link."
+                status_code=400,
+                detail="Invalid Google Drive URL. Please provide a valid Google Drive folder link.",
             )
-        
+
         # Validate component combinations
         valid_converters = ["marker", "openai", "markitdown"]
-        valid_chunkers = ["fixed_length", "recursive", "markdown_aware", "semantic_split"]
+        valid_chunkers = [
+            "fixed_length",
+            "recursive",
+            "markdown_aware",
+            "semantic_split",
+        ]
         valid_embedders = ["openai", "bge", "bgelarge", "nomic", "instructor"]
-        
+
         # Validate each combination tuple
-        for i, (converter, chunker, embedder) in enumerate(request.processing_combinations):
+        for i, (converter, chunker, embedder) in enumerate(
+            request.processing_combinations
+        ):
             if converter not in valid_converters:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Invalid converter '{converter}' in combination {i+1}. Valid options: {valid_converters}"
+                    detail=f"Invalid converter '{converter}' in combination {i+1}. Valid options: {valid_converters}",
                 )
             if chunker not in valid_chunkers:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Invalid chunker '{chunker}' in combination {i+1}. Valid options: {valid_chunkers}"
+                    detail=f"Invalid chunker '{chunker}' in combination {i+1}. Valid options: {valid_chunkers}",
                 )
             if embedder not in valid_embedders:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Invalid embedder '{embedder}' in combination {i+1}. Valid options: {valid_embedders}"
+                    detail=f"Invalid embedder '{embedder}' in combination {i+1}. Valid options: {valid_embedders}",
                 )
-        
-        user_logger.debug(f"Validated {len(request.processing_combinations)} processing combinations")
-        
+
+        user_logger.debug(
+            f"Validated {len(request.processing_combinations)} processing combinations"
+        )
+
         papers_directory = PROJECT_ROOT / "papers"
 
         # Create user-specific directory structure
         user_papers_dir = os.path.join(str(papers_directory), request.user_email)
-        
+
         # Create directories if they don't exist
         os.makedirs(user_papers_dir, exist_ok=True)
-        
+
         # Use the provided processing combinations directly
         processing_combinations = request.processing_combinations
-        
+
         combination_strings = [
             f"{converter}_{chunker}_{embedder}"
             for converter, chunker, embedder in processing_combinations
         ]
-        
+
         user_logger.info(f"Will process {len(processing_combinations)} combinations")
-        
+
         # Download PDFs from Google Drive to user-specific papers folder
         downloaded_files = scrape_gdrive_pdfs(
             drive_url=request.drive_url,
             download_dir=user_papers_dir,
-            user_email=request.user_email
+            user_email=request.user_email,
         )
-        
+
         if not downloaded_files:
-            user_logger.warning("No PDF files found or downloaded from the Google Drive folder")
+            user_logger.warning(
+                "No PDF files found or downloaded from the Google Drive folder"
+            )
             return IngestGDriveResponse(
                 success=False,
                 message="No PDF files found or downloaded from the Google Drive folder",
                 downloaded_files=[],
                 total_files=0,
-                processing_combinations=combination_strings
+                processing_combinations=combination_strings,
             )
-        
-        user_logger.info(f"Downloaded {len(downloaded_files)} files, starting processing...")
-        
+
+        user_logger.info(
+            f"Downloaded {len(downloaded_files)} files, starting processing..."
+        )
+
         # Process each combination
         for converter, chunker, embedder in processing_combinations:
             try:
-                user_logger.info(f"Processing combination: {converter}_{chunker}_{embedder}")
+                user_logger.info(
+                    f"Processing combination: {converter}_{chunker}_{embedder}"
+                )
                 # Call the processor for this specific combination with user-specific db path
-                
+
                 await process_combination(
                     converter=converter,
                     chunker=chunker,
                     embedder=embedder,
                     papers_list=downloaded_files,
                     user_papers_dir=user_papers_dir,
-                    user_email=request.user_email
+                    user_email=request.user_email,
                 )
-                
-                user_logger.info(f"Successfully completed combination: {converter}_{chunker}_{embedder}")
+
+                user_logger.info(
+                    f"Successfully completed combination: {converter}_{chunker}_{embedder}"
+                )
                 # Create user database after processing
             except Exception as e:
                 # Log the error but continue with other combinations
-                user_logger.error(f"Error processing combination {converter}_{chunker}_{embedder}: {str(e)}")
-        
+                user_logger.error(
+                    f"Error processing combination {converter}_{chunker}_{embedder}: {str(e)}"
+                )
+
         user_logger.info("All processing combinations completed")
         return IngestGDriveResponse(
             success=True,
-            message=f"Successfully processed {len(downloaded_files)} PDF files with {len(processing_combinations)} combinations and cleaned up papers/ directory.",
+            message=(f"Successfully processed {len(downloaded_files)} PDF files with "
+                     f"{len(processing_combinations)} combinations and cleaned up papers/ directory."),
             downloaded_files=downloaded_files,
             total_files=len(downloaded_files),
-            processing_combinations=combination_strings
+            processing_combinations=combination_strings,
         )
-        
+
     except ValueError as e:
         user_logger.error(f"Validation error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -233,54 +258,61 @@ async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
         user_logger.error(f"Error ingesting PDFs: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error ingesting PDFs: {str(e)}")
 
+
 @app.get("/api/status")
 async def get_user_status(user_email: str):
     """Get processing status for a specific user"""
     # Create user-specific logger for this request
     user_logger = get_user_logger(user_email, "status_check")
-    
+
     try:
         # Construct user-specific paths
         papers_directory = PROJECT_ROOT / "papers" / user_email
         mappings_file_path = PROJECT_ROOT / "temp" / user_email / "mappings.json"
-        
+
         # Count papers in user's papers directory
         total_papers = 0
         if papers_directory.exists():
             # Count PDF files in the directory
             pdf_files = list(papers_directory.glob("*.pdf"))
             total_papers = len(pdf_files)
-        
+
         # Count completed jobs from mappings file
         completed_jobs = 0
         if mappings_file_path.exists():
-            with open(mappings_file_path, 'r') as f:
+            with open(mappings_file_path, "r") as f:
                 mappings = json.load(f)
                 # Count total database combinations processed across all PDFs
                 for pdf_cid, db_combinations in mappings.items():
                     completed_jobs += len(db_combinations)
-        
+
         # Calculate completion percentage
         if total_papers == 0:
             completion_percentage = 0.0
         else:
             completion_percentage = (completed_jobs / total_papers) * 100.0
-        
-        user_logger.debug(f"Status check: {completed_jobs} jobs completed for {total_papers} papers")
-        
+
+        user_logger.debug(
+            f"Status check: {completed_jobs} jobs completed for {total_papers} papers"
+        )
+
         return UserStatusResponse(
             user_email=user_email,
             total_papers=total_papers,
             completed_jobs=completed_jobs,
             completion_percentage=round(completion_percentage, 2),
             papers_directory=str(papers_directory),
-            mappings_file_path=str(mappings_file_path)  # Updated to reflect new file
+            mappings_file_path=str(mappings_file_path),  # Updated to reflect new file
         )
-        
+
     except Exception as e:
         user_logger.error(f"Error getting user status: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error getting user status: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting user status: {str(e)}"
+        )
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=5000) 
+
+    uvicorn.run(app, host="0.0.0.0", port=5000)

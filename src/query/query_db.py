@@ -25,36 +25,38 @@ load_dotenv()
 def discover_user_collections(user_email: str, db_path: str = None) -> List[str]:
     """
     Discover all available collections for a specific user.
-    
+
     Args:
         user_email: Email of the user to discover collections for
         db_path: Optional path to database directory. If None, uses default user path
-        
+
     Returns:
         List of collection names available for the user
     """
     # Use user-specific logger
     user_logger = get_user_logger(user_email, "query_db") if user_email else logger
-    
+
     try:
         # Construct user-specific database path
         db_path = Path(db_path)
-        
+
         if not db_path.exists():
             user_logger.warning(f"Database path does not exist: {db_path}")
             return []
-        
+
         user_logger.info(f"Discovering collections in: {db_path}")
-        
+
         # Connect to ChromaDB and list collections
         client = chromadb.PersistentClient(path=str(db_path))
         collections = client.list_collections()
-        
+
         collection_names = [collection.name for collection in collections]
-        user_logger.info(f"Found {len(collection_names)} collections for user {user_email}: {collection_names}")
-        
+        user_logger.info(
+            f"Found {len(collection_names)} collections for user {user_email}: {collection_names}"
+        )
+
         return collection_names
-        
+
     except Exception as e:
         user_logger.error(f"Error discovering collections for user {user_email}: {e}")
         return []
@@ -81,7 +83,7 @@ def query_collection(collection_name, user_query, db_path=None, user_email=None)
     """
     # Use user-specific logger if user_email is available
     user_logger = get_user_logger(user_email, "query_db") if user_email else logger
-    
+
     try:
         parts = collection_name.split("_")
         if len(parts) > 1:
@@ -113,14 +115,16 @@ def query_collection(collection_name, user_query, db_path=None, user_email=None)
             f"Querying collection '{collection_name}' with: '{user_query[:50]}...'"
         )
         user_logger.info(f"Using database path: {db_path}")
-        
+
         client = chromadb.PersistentClient(path=str(db_path))
 
         # Get collection
         collection = client.get_collection(name=f"{collection_name}")
 
         # Generate embedding using the embedder module with the determined embedder_type
-        embedding = embed(embeder_type=embedder_type, input_text=user_query, user_email=user_email)
+        embedding = embed(
+            embeder_type=embedder_type, input_text=user_query, user_email=user_email
+        )
 
         values = collection.query(
             query_embeddings=[embedding],

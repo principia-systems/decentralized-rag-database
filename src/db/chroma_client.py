@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Optional, List
 
 import chromadb
-import numpy as np
 
 
 class VectorDatabaseManager:
@@ -117,7 +116,9 @@ class VectorDatabaseManager:
                 metadatas=metadatas,
             )
         except Exception as e:
-            raise Exception(f"Error batch inserting documents into database '{db_name}': {e}")
+            raise Exception(
+                f"Error batch inserting documents into database '{db_name}': {e}"
+            )
 
     def print_all_metadata(self):
         """

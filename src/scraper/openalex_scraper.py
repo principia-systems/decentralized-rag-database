@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class OpenAlexScraper:
     """OpenAlex research paper scraper with zip file creation."""
-    
+
     def __init__(self, config: ScraperConfig):
         """Initialize scraper with configuration."""
         self.config = config
@@ -26,10 +26,9 @@ class OpenAlexScraper:
     def _make_session(self) -> requests.Session:
         """Create and configure requests session with headers."""
         s = requests.Session()
-        s.headers.update({
-            "User-Agent": self.config.user_agent,
-            "Referer": self.config.referer
-        })
+        s.headers.update(
+            {"User-Agent": self.config.user_agent, "Referer": self.config.referer}
+        )
         return s
 
     def fetch_works(self, page: int) -> dict:
@@ -46,7 +45,7 @@ class OpenAlexScraper:
             "per-page": self.config.per_page,
             "page": page,
         }
-        
+
         logger.info(f"Fetching works page {page} for topic: {self.config.topic}")
         r = self.session.get(self.config.api_base, params=params, timeout=30)
         r.raise_for_status()
@@ -60,19 +59,21 @@ class OpenAlexScraper:
             pdf = oa.get("pdf_url")
             if not pdf:
                 continue
-            
+
             # Create a safe filename from title and ID
             title = w.get("title", "unknown").replace("/", "_").replace("\\", "_")[:100]
             openalex_id = w.get("id", "").split("/")[-1] if w.get("id") else "unknown"
-            
-            entries.append({
-                "pdf_url": pdf,
-                "host_type": oa.get("host_type"),
-                "doi": w.get("doi"),
-                "title": title,
-                "openalex_id": openalex_id,
-                "filename": f"{openalex_id}_{title}.pdf"
-            })
+
+            entries.append(
+                {
+                    "pdf_url": pdf,
+                    "host_type": oa.get("host_type"),
+                    "doi": w.get("doi"),
+                    "title": title,
+                    "openalex_id": openalex_id,
+                    "filename": f"{openalex_id}_{title}.pdf",
+                }
+            )
         return entries
 
     def fetch_unpaywall(self, doi: str) -> Optional[str]:
@@ -94,12 +95,12 @@ class OpenAlexScraper:
     def download_pdf(self, entry: Dict) -> Optional[str]:
         """Download PDF from entry URL with Unpaywall fallback."""
         os.makedirs(self.config.outdir, exist_ok=True)
-        
+
         # Use the safe filename from the entry
         filename = entry.get("filename", entry["pdf_url"].split("/")[-1].split("?")[0])
         if not filename.endswith(".pdf"):
             filename += ".pdf"
-        
+
         path = os.path.join(self.config.outdir, filename)
         if os.path.exists(path):
             logger.info(f"File already exists: {filename}")
@@ -113,12 +114,16 @@ class OpenAlexScraper:
             if e.response.status_code in (403, 429):
                 fallback = self.fetch_unpaywall(entry.get("doi"))
                 if fallback:
-                    logger.info(f"Publisher blocked. Retrying via Unpaywall: {fallback}")
+                    logger.info(
+                        f"Publisher blocked. Retrying via Unpaywall: {fallback}"
+                    )
                     try:
                         r = self.session.get(fallback, stream=True, timeout=60)
                         r.raise_for_status()
                     except Exception as fallback_error:
-                        logger.error(f"Unpaywall fallback failed for {filename}: {fallback_error}")
+                        logger.error(
+                            f"Unpaywall fallback failed for {filename}: {fallback_error}"
+                        )
                         return None
                 else:
                     logger.error(f"No Unpaywall fallback available for {filename}")
@@ -146,28 +151,30 @@ class OpenAlexScraper:
             # Create a unique zip filename
             timestamp = int(time.time())
             unique_id = str(uuid.uuid4())[:8]
-            safe_topic = "".join(c for c in self.config.topic[:30] if c.isalnum() or c in (' ', '-', '_')).strip()
+            safe_topic = "".join(
+                c for c in self.config.topic[:30] if c.isalnum() or c in (" ", "-", "_")
+            ).strip()
             zip_filename = f"research_papers_{safe_topic}_{timestamp}_{unique_id}.zip"
-            
+
             # Create downloads directory if it doesn't exist
             downloads_dir = Path(self.config.downloads_dir)
             downloads_dir.mkdir(parents=True, exist_ok=True)
-            
+
             zip_path = downloads_dir / zip_filename
-            
+
             logger.info(f"Creating zip file: {zip_path}")
-            
-            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 for file_path in downloaded_files:
                     if os.path.exists(file_path):
                         # Add file to zip with just the filename (not full path)
                         arcname = os.path.basename(file_path)
                         zipf.write(file_path, arcname)
                         logger.info(f"Added to zip: {arcname}")
-            
+
             logger.info(f"Successfully created zip file: {zip_path}")
             return str(zip_path)
-            
+
         except Exception as e:
             logger.error(f"Error creating zip file: {e}")
             return None
@@ -179,7 +186,7 @@ class OpenAlexScraper:
                 if os.path.exists(file_path):
                     os.remove(file_path)
                     logger.info(f"Cleaned up: {os.path.basename(file_path)}")
-            
+
             # Also try to remove the download directory if it's empty
             try:
                 if os.path.exists(self.config.outdir):
@@ -188,17 +195,19 @@ class OpenAlexScraper:
             except OSError:
                 # Directory not empty, that's fine
                 pass
-                
+
         except Exception as e:
             logger.warning(f"Error during cleanup: {e}")
 
-    def scrape_and_create_zip(self, cleanup_pdfs: bool = True) -> Tuple[bool, str, List[str], Optional[str]]:
+    def scrape_and_create_zip(
+        self, cleanup_pdfs: bool = True
+    ) -> Tuple[bool, str, List[str], Optional[str]]:
         """
         Scrape research papers and create a downloadable zip file.
-        
+
         Args:
             cleanup_pdfs: Whether to delete the individual PDF files after creating the zip
-        
+
         Returns:
             Tuple of (success, message_or_error, downloaded_files, zip_file_path)
         """
@@ -225,16 +234,15 @@ class OpenAlexScraper:
             # Download papers
             downloaded_files = []
             with ThreadPoolExecutor(max_workers=self.config.workers) as ex:
-                futures = [
-                    ex.submit(self.download_pdf, e)
-                    for e in entries
-                ]
+                futures = [ex.submit(self.download_pdf, e) for e in entries]
                 for i, f in enumerate(futures):
                     try:
                         path = f.result()
                         if path:
                             downloaded_files.append(path)
-                            logger.info(f"Downloaded ({i+1}/{len(entries)}): {os.path.basename(path)}")
+                            logger.info(
+                                f"Downloaded ({i+1}/{len(entries)}): {os.path.basename(path)}"
+                            )
                     except Exception as err:
                         logger.error(f"Failed to download entry {i+1}: {err}")
 
@@ -247,16 +255,26 @@ class OpenAlexScraper:
             zip_path = self.create_zip_file(downloaded_files)
             if zip_path:
                 logger.info(f"Successfully created zip file: {zip_path}")
-                
+
                 # Clean up individual PDF files if requested
                 if cleanup_pdfs:
                     logger.info("Cleaning up downloaded PDF files...")
                     self.cleanup_downloaded_files(downloaded_files)
-                
-                return True, f"Successfully found and packaged {len(downloaded_files)} research papers", [os.path.basename(f) for f in downloaded_files], zip_path
+
+                return (
+                    True,
+                    f"Successfully found and packaged {len(downloaded_files)} research papers",
+                    [os.path.basename(f) for f in downloaded_files],
+                    zip_path,
+                )
             else:
-                return False, "Failed to create zip file", [os.path.basename(f) for f in downloaded_files], None
+                return (
+                    False,
+                    "Failed to create zip file",
+                    [os.path.basename(f) for f in downloaded_files],
+                    None,
+                )
 
         except Exception as e:
             logger.error(f"Error in scrape_and_create_zip: {e}")
-            return False, f"Scraping failed: {str(e)}", [], None 
+            return False, f"Scraping failed: {str(e)}", [], None

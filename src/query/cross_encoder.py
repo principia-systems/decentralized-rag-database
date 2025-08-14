@@ -61,6 +61,7 @@ def _gpu_locks_dir() -> os.PathLike:
     path.mkdir(parents=True, exist_ok=True)
     return path
 
+
 @lru_cache(maxsize=16)
 def _get_cross_encoder(
     model_id: str,
@@ -107,7 +108,9 @@ class CrossEncoderRanker:
         self.config = config
         self.user_email = user_email
 
-        model_id = MODEL_PRESETS.get(config.model_name_or_preset, config.model_name_or_preset)
+        model_id = MODEL_PRESETS.get(
+            config.model_name_or_preset, config.model_name_or_preset
+        )
         init_logger = (
             get_user_logger(user_email, "cross_encoder") if user_email else logger
         )
@@ -165,13 +168,17 @@ class CrossEncoderRanker:
         # Use user-level logger if available
         effective_email = user_email or self.user_email
         user_logger = (
-            get_user_logger(effective_email, "cross_encoder") if effective_email else logger
+            get_user_logger(effective_email, "cross_encoder")
+            if effective_email
+            else logger
         )
         user_logger.debug(f"Scoring {len(pairs)} pairs with cross-encoder")
 
         # Request-level GPU binding with lock-based round-robin assignment
         cuda_indices = _visible_cuda_indices()
-        total_timeout_sec = int(os.getenv("CROSS_ENCODER_GPU_LOCK_TOTAL_TIMEOUT", "600"))
+        total_timeout_sec = int(
+            os.getenv("CROSS_ENCODER_GPU_LOCK_TOTAL_TIMEOUT", "600")
+        )
         retry_sleep_sec = float(os.getenv("CROSS_ENCODER_GPU_LOCK_RETRY_SLEEP", "0.2"))
 
         def _predict_on_device(device_str: str) -> List[float]:
@@ -195,7 +202,9 @@ class CrossEncoderRanker:
             locks_dir = _gpu_locks_dir()
             # Always start from GPU index 0
             start_from = 0
-            order = list(range(start_from, len(cuda_indices))) + list(range(0, start_from))
+            order = list(range(start_from, len(cuda_indices))) + list(
+                range(0, start_from)
+            )
 
             start_time = time.time()
             while True:
@@ -205,7 +214,10 @@ class CrossEncoderRanker:
                     try:
                         with file_lock(lock_path, timeout=0):
                             gpu_name = torch.cuda.get_device_name(gpu_idx)
-                            mem_gb = torch.cuda.get_device_properties(gpu_idx).total_memory / 1024**3
+                            mem_gb = (
+                                torch.cuda.get_device_properties(gpu_idx).total_memory
+                                / 1024**3
+                            )
                             user_logger.info(
                                 f"Acquired GPU lock -> idx={gpu_idx}, name={gpu_name} ({mem_gb:.1f} GB)"
                             )
@@ -242,7 +254,9 @@ class CrossEncoderRanker:
         paired.sort(key=lambda x: x[1], reverse=descending)
         effective_email = user_email or self.user_email
         user_logger = (
-            get_user_logger(effective_email, "cross_encoder") if effective_email else logger
+            get_user_logger(effective_email, "cross_encoder")
+            if effective_email
+            else logger
         )
         if top_k is not None:
             user_logger.debug("Returning top_k=%d scored items", top_k)
@@ -254,5 +268,3 @@ __all__ = [
     "CrossEncoderConfig",
     "MODEL_PRESETS",
 ]
-
-

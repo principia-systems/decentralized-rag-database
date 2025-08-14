@@ -15,43 +15,43 @@ from pathlib import Path
 def sanitize_email_for_path(email: str) -> str:
     """
     Sanitize email address for use as a directory name.
-    
+
     Args:
         email: User email address
-        
+
     Returns:
         Sanitized email safe for use as directory name
     """
     # Replace invalid characters with underscores
-    sanitized = re.sub(r'[<>:"/\\|?*@.]', '_', email.lower())
+    sanitized = re.sub(r'[<>:"/\\|?*@.]', "_", email.lower())
     # Remove any consecutive underscores
-    sanitized = re.sub(r'_+', '_', sanitized)
+    sanitized = re.sub(r"_+", "_", sanitized)
     # Remove leading/trailing underscores
-    sanitized = sanitized.strip('_')
+    sanitized = sanitized.strip("_")
     return sanitized
 
 
 def get_user_log_dir(user_email: str) -> Path:
     """
     Get the log directory for a specific user.
-    
+
     Args:
         user_email: User email address
-        
+
     Returns:
         Path to user's log directory
     """
     # Get project root (3 levels up from this file)
     project_root = Path(__file__).parent.parent.parent
     logs_root = project_root / "logs"
-    
+
     # Create sanitized user directory
     sanitized_email = sanitize_email_for_path(user_email)
     user_log_dir = logs_root / sanitized_email
-    
+
     # Ensure directory exists
     user_log_dir.mkdir(parents=True, exist_ok=True)
-    
+
     return user_log_dir
 
 
@@ -74,12 +74,14 @@ def setup_user_logger(user_email: str, name=None, level=None):
 
     # Create unique logger name for each user and component
     sanitized_email = sanitize_email_for_path(user_email)
-    logger_name = f"user_{sanitized_email}_{name}" if name else f"user_{sanitized_email}"
-    
+    logger_name = (
+        f"user_{sanitized_email}_{name}" if name else f"user_{sanitized_email}"
+    )
+
     # Get or create logger
     logger = logging.getLogger(logger_name)
     logger.setLevel(level)
-    
+
     # Prevent inheritance from parent loggers to avoid duplicate messages
     logger.propagate = False
 
@@ -88,9 +90,7 @@ def setup_user_logger(user_email: str, name=None, level=None):
         logger.removeHandler(handler)
 
     # Create formatters
-    formatter = logging.Formatter(
-        "%(asctime)s - %(levelname)s - %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
     # Console handler
     console_handler = logging.StreamHandler(sys.stdout)
@@ -101,16 +101,18 @@ def setup_user_logger(user_email: str, name=None, level=None):
     user_log_dir = get_user_log_dir(user_email)
     log_filename = f"{name or 'general'}.log"
     log_file = user_log_dir / log_filename
-    
+
     # Ensure the log file directory exists
     log_file.parent.mkdir(parents=True, exist_ok=True)
-    
-    file_handler = logging.FileHandler(log_file, mode='a')
+
+    file_handler = logging.FileHandler(log_file, mode="a")
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
-    
+
     # Log the setup for debugging
-    logger.debug(f"User logger setup for {user_email} - Component: {name} - Log file: {log_file}")
+    logger.debug(
+        f"User logger setup for {user_email} - Component: {name} - Log file: {log_file}"
+    )
 
     return logger
 

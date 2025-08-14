@@ -9,7 +9,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import requests
 from dotenv import load_dotenv
@@ -52,7 +52,10 @@ class EvaluationAgent:
             raise ValueError("OpenRouter API key not configured")
 
     def query_collections(
-        self, query: str, db_path: Optional[str] = None, user_email: Optional[str] = None
+        self,
+        query: str,
+        db_path: Optional[str] = None,
+        user_email: Optional[str] = None,
     ) -> str:
         """
         Query multiple collections with the same query and store results.
@@ -66,10 +69,12 @@ class EvaluationAgent:
             Path to the temporary JSON file containing all results
         """
         # Use user-specific logger if user_email is available
-        user_logger = get_user_logger(user_email, "evaluation_agent") if user_email else logger
-        
+        user_logger = (
+            get_user_logger(user_email, "evaluation_agent") if user_email else logger
+        )
+
         timestamp = int(time.time())
-        
+
         # Use user-specific temp directory if user_email is provided
         if user_email:
             user_temp_dir = self.temp_dir / user_email / "evaluation"
@@ -97,7 +102,9 @@ class EvaluationAgent:
         for collection_name in collection_names:
             user_logger.info(f"Querying collection: {collection_name}")
             try:
-                result_json = query_collection(collection_name, query, db_path, user_email)
+                result_json = query_collection(
+                    collection_name, query, db_path, user_email
+                )
                 result_data = json.loads(result_json)
                 collection_results[collection_name] = result_data
             except Exception as e:
@@ -129,7 +136,9 @@ class EvaluationAgent:
         collections = all_results["collection_results"]
 
         # Use user-specific logger if user_email is available
-        user_logger = get_user_logger(user_email, "evaluation_agent") if user_email else logger
+        user_logger = (
+            get_user_logger(user_email, "evaluation_agent") if user_email else logger
+        )
 
         evaluation = {
             "query": original_query,
@@ -169,11 +178,15 @@ class EvaluationAgent:
                 eval_data = json.loads(evaluation_text)
                 evaluation.update(eval_data)
             except json.JSONDecodeError:
-                user_logger.error(f"Failed to parse evaluation results: {evaluation_text}")
+                user_logger.error(
+                    f"Failed to parse evaluation results: {evaluation_text}"
+                )
                 evaluation["error"] = "Failed to parse evaluation results"
                 evaluation["raw_response"] = evaluation_text
         except Exception as e:
-            user_logger.error(f"Error evaluating results with model {self.model_name}: {e}")
+            user_logger.error(
+                f"Error evaluating results with model {self.model_name}: {e}"
+            )
             evaluation["error"] = str(e)
 
         eval_file = Path(results_file).with_name(

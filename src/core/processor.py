@@ -39,13 +39,17 @@ class Processor:
             project_root: Path to project root directory
         """
         # Use user-specific logger
-        self.logger = get_user_logger(user_email, "processor") if user_email else get_logger(__name__ + ".Processor")
-        
+        self.logger = (
+            get_user_logger(user_email, "processor")
+            if user_email
+            else get_logger(__name__ + ".Processor")
+        )
+
         self.authorPublicKey = authorPublicKey  # Author Public Key
-        
+
         # Initialize IPFS client
         self.ipfs_client = get_ipfs_client()
-        
+
         self.convert_cache: Dict[str, str] = {}  # Cache for converted text
         self.chunk_cache: Dict[str, List[str]] = {}  # Cache for chunked text
         self.project_root = project_root or Path(__file__).parent.parent.parent
@@ -54,12 +58,12 @@ class Processor:
         # Create temp directory for temporary files
         self.temp_dir = self.project_root / "temp"
         os.makedirs(self.temp_dir, exist_ok=True)
-        
+
         # Create user-specific folder inside temp directory
         # Sanitize email for use as folder name (replace @ and . with _)
         self.user_temp_dir = self.temp_dir / self.user_email
         os.makedirs(self.user_temp_dir, exist_ok=True)
-        
+
         self.logger.info(f"Using user temp directory: {self.user_temp_dir}")
 
         # Paths for user-specific temporary files
@@ -83,9 +87,7 @@ class Processor:
         self.logger.info(
             f"Uploading author public key to IPFS: {self.authorPublicKey[:10]}..."
         )
-        self.author_cid = self.ipfs_client.upload_file(
-            str(self.tmp_file_path)
-        )
+        self.author_cid = self.ipfs_client.upload_file(str(self.tmp_file_path))
         self.logger.info(f"Author CID: {self.author_cid}")
         self.graph_db.add_ipfs_node(self.author_cid)
 
@@ -103,12 +105,14 @@ class Processor:
         except Exception as e:
             self.logger.error(f"Error writing to file {file_path}: {e}")
 
-    def __read_mappings(self, mapping_file_path: Union[str, Path]) -> Dict[str, List[str]]:
+    def __read_mappings(
+        self, mapping_file_path: Union[str, Path]
+    ) -> Dict[str, List[str]]:
         """Read mappings from JSON file.
-        
+
         Args:
             mapping_file_path: Path to the mappings JSON file
-            
+
         Returns:
             Dictionary mapping PDF CIDs to list of database combinations
         """
@@ -117,12 +121,16 @@ class Processor:
                 with open(mapping_file_path, "r") as file:
                     content = file.read().strip()
                     if not content:
-                        self.logger.debug(f"Mappings file {mapping_file_path} is empty, returning empty dict")
+                        self.logger.debug(
+                            f"Mappings file {mapping_file_path} is empty, returning empty dict"
+                        )
                         return {}
                     return json.loads(content)
             return {}
         except json.JSONDecodeError as e:
-            self.logger.error(f"JSON decode error reading mappings from {mapping_file_path}: {e}")
+            self.logger.error(
+                f"JSON decode error reading mappings from {mapping_file_path}: {e}"
+            )
             # Return empty dict and try to fix the file
             try:
                 with open(mapping_file_path, "w") as file:
@@ -135,9 +143,11 @@ class Processor:
             self.logger.error(f"Error reading mappings from {mapping_file_path}: {e}")
             return {}
 
-    def __write_mappings(self, mappings: Dict[str, List[str]], mapping_file_path: Union[str, Path]) -> None:
+    def __write_mappings(
+        self, mappings: Dict[str, List[str]], mapping_file_path: Union[str, Path]
+    ) -> None:
         """Write mappings to JSON file.
-        
+
         Args:
             mappings: Dictionary mapping PDF CIDs to list of database combinations
             mapping_file_path: Path to the mappings JSON file
@@ -164,23 +174,27 @@ class Processor:
             self.logger.error(f"Failed to retrieve IPFS content for CID {cid}: {e}")
             return None
 
-    def _extract_metadata_with_openrouter(self, markdown_content: str, model_name: str = "openai/gpt-5") -> Optional[Dict[str, Any]]:
+    def _extract_metadata_with_openrouter(
+        self, markdown_content: str, model_name: str = "openai/gpt-5"
+    ) -> Optional[Dict[str, Any]]:
         """
         Extract metadata from markdown content using OpenRouter API.
-        
+
         Args:
             markdown_content: The markdown content to extract metadata from
             model_name: The OpenRouter model to use for extraction
-            
+
         Returns:
             Dictionary containing extracted metadata or None if extraction fails
         """
         if not self.openrouter_api_key:
-            self.logger.warning("OpenRouter API key not available. Cannot extract metadata.")
+            self.logger.warning(
+                "OpenRouter API key not available. Cannot extract metadata."
+            )
             return None
-            
+
         # Create a prompt for metadata extraction
-        system_prompt = """You are a helpful assistant that extracts metadata from academic papers in markdown format. 
+        system_prompt = """You are a helpful assistant that extracts metadata from academic papers in markdown format.
             Extract the following information and return it as a valid JSON object:
             - title: The paper title
             - authors: List of author names (as an array)
@@ -200,14 +214,15 @@ class Processor:
             "keywords": ["deep learning", "natural language processing", "neural networks"],
             "publication_date": "2023-05-15",
             "journal": "Journal of Machine Learning Research",
-            "citation": "Smith, J., Doe, J., & Johnson, B. (2023). Deep Learning for Natural Language Processing: A Survey. Journal of Machine Learning Research, 24(5), 123-145. https://doi.org/10.1000/182"
+            "citation": ("Smith, J., Doe, J., & Johnson, B. (2023). Deep Learning for Natural Language Processing: "
+                         "A Survey. Journal of Machine Learning Research, 24(5), 123-145. https://doi.org/10.1000/182")
             }
 
             If any field is not found, use appropriate default values like "Unknown Title", ["Unknown Authors"], "No abstract available", etc.
             Return ONLY the JSON object, no additional text."""
 
         user_prompt = f"Please extract metadata from this academic paper:\n\n{markdown_content[:8000]}"  # Limit content to avoid token limits
-        
+
         try:
             response = requests.post(
                 url="https://openrouter.ai/api/v1/chat/completions",
@@ -227,13 +242,13 @@ class Processor:
                 },
                 timeout=30,
             )
-            
+
             response.raise_for_status()
             response_data = response.json()
-            
+
             if response_data.get("choices") and len(response_data["choices"]) > 0:
                 content = response_data["choices"][0]["message"]["content"]
-                
+
                 # Try to parse the JSON response
                 try:
                     metadata = json.loads(content)
@@ -241,25 +256,31 @@ class Processor:
                     return metadata
                 except json.JSONDecodeError:
                     # If response isn't valid JSON, try to extract it
-                    self.logger.warning("OpenRouter response wasn't valid JSON, trying to parse...")
+                    self.logger.warning(
+                        "OpenRouter response wasn't valid JSON, trying to parse..."
+                    )
                     try:
                         # Look for JSON-like content in the response
-                        start_idx = content.find('{')
-                        end_idx = content.rfind('}') + 1
+                        start_idx = content.find("{")
+                        end_idx = content.rfind("}") + 1
                         if start_idx != -1 and end_idx != 0:
                             json_str = content[start_idx:end_idx]
                             metadata = json.loads(json_str)
-                            self.logger.info("Successfully parsed metadata from OpenRouter response")
+                            self.logger.info(
+                                "Successfully parsed metadata from OpenRouter response"
+                            )
                             return metadata
                     except (json.JSONDecodeError, ValueError):
                         pass
-                    
-                    self.logger.error(f"Failed to parse OpenRouter response as JSON: {content}")
+
+                    self.logger.error(
+                        f"Failed to parse OpenRouter response as JSON: {content}"
+                    )
                     return None
             else:
                 self.logger.error("No response content from OpenRouter")
                 return None
-                
+
         except requests.exceptions.Timeout:
             self.logger.error("OpenRouter API request timed out")
             return None
@@ -270,14 +291,16 @@ class Processor:
             self.logger.error(f"Unexpected error during metadata extraction: {e}")
             return None
 
-    def _create_or_get_metadata_node(self, pdf_cid: str, converted_text: str, doc_id: Optional[str] = None) -> Optional[str]:
+    def _create_or_get_metadata_node(
+        self, pdf_cid: str, converted_text: str, doc_id: Optional[str] = None
+    ) -> Optional[str]:
         """
         Create or retrieve a metadata node for the given PDF.
-        
+
         Args:
             pdf_cid: The PDF CID to create/get metadata for
             converted_text: The converted markdown text to extract metadata from
-            
+
         Returns:
             The metadata CID if successful, None otherwise
         """
@@ -286,52 +309,54 @@ class Processor:
         if existing_metadata_cid:
             self.logger.info(f"Using existing metadata node: {existing_metadata_cid}")
             return existing_metadata_cid
-        
+
         self.logger.info("No existing metadata found, extracting with OpenRouter...")
-        
+
         # Extract metadata using OpenRouter
         extracted_metadata = self._extract_metadata_with_openrouter(converted_text)
-        
+
         if not extracted_metadata:
-            self.logger.warning("Failed to extract metadata with OpenRouter, using default metadata")
+            self.logger.warning(
+                "Failed to extract metadata with OpenRouter, using default metadata"
+            )
             extracted_metadata = self.graph_db.default_metadata()
-        
+
         # Add doc_id to metadata if provided
         if doc_id:
             extracted_metadata["pdf_filename"] = doc_id
         else:
             extracted_metadata["pdf_filename"] = "Unknown"
-        
+
         # Serialize metadata as JSON
         try:
             metadata_json = json.dumps(extracted_metadata, indent=2)
-            
+
             # Write metadata to temporary file
             self.__write_to_file(metadata_json, self.tmp_file_path)
-            
+
             # Upload metadata to IPFS
             metadata_cid = self.ipfs_client.upload_file(str(self.tmp_file_path))
-            
+
             if not metadata_cid:
                 self.logger.error("Failed to upload metadata to IPFS")
                 return None
-                
+
             self.logger.info(f"Created new metadata node: {metadata_cid}")
-            
+
             # Create metadata node and relationship using graph database
             if self.graph_db.create_metadata_node(pdf_cid, metadata_cid):
                 return metadata_cid
             else:
                 self.logger.error("Failed to create metadata node in graph database")
                 return None
-            
+
         except Exception as e:
             self.logger.error(f"Error creating metadata node: {e}")
             return None
 
     def __update_mappings(self, pdf_cid: str, db_combination: str) -> None:
         """Update both global and user-specific mappings.
-        
+
         Args:
             pdf_cid: The PDF CID that was processed
             db_combination: The database combination in format "converter_chunker_embedder"
@@ -339,23 +364,23 @@ class Processor:
         # Global mappings file
         global_mappings_path = self.temp_dir / "mappings.json"
         global_mappings = self.__read_mappings(global_mappings_path)
-        
+
         if pdf_cid not in global_mappings:
             global_mappings[pdf_cid] = []
         if db_combination not in global_mappings[pdf_cid]:
             global_mappings[pdf_cid].append(db_combination)
-        
+
         self.__write_mappings(global_mappings, global_mappings_path)
-        
+
         # User-specific mappings file
         user_mappings_path = self.user_temp_dir / "mappings.json"
         user_mappings = self.__read_mappings(user_mappings_path)
-        
+
         if pdf_cid not in user_mappings:
             user_mappings[pdf_cid] = []
         if db_combination not in user_mappings[pdf_cid]:
             user_mappings[pdf_cid].append(db_combination)
-        
+
         self.__write_mappings(user_mappings, user_mappings_path)
 
     def process(self, pdf_path: str, databases: List[dict]) -> None:
@@ -382,12 +407,11 @@ class Processor:
 
         self.logger.info(f"Adding PDF CID to graph: {metadata['pdf_ipfs_cid']}")
         self.graph_db.add_ipfs_node(metadata["pdf_ipfs_cid"])
-        
+
         # Handle metadata extraction and node creation
         metadata_cid = None
-        
+
         for db_config in databases:
-            
             converter_func = db_config["converter"]
             chunker_func = db_config["chunker"]
             embedder_func = db_config["embedder"]
@@ -396,11 +420,18 @@ class Processor:
             # Check if this PDF + database combination already exists in global mappings
             global_mappings_path = self.temp_dir / "mappings.json"
             global_mappings = self.__read_mappings(global_mappings_path)
-            
-            self.logger.debug(f"Checking if {db_combination} already exists for PDF CID {metadata['pdf_ipfs_cid']}")
-            
-            if metadata["pdf_ipfs_cid"] in global_mappings and db_combination in global_mappings[metadata["pdf_ipfs_cid"]]:
-                self.logger.info(f"Skipping {db_combination} - already processed for this PDF")
+
+            self.logger.debug(
+                f"Checking if {db_combination} already exists for PDF CID {metadata['pdf_ipfs_cid']}"
+            )
+
+            if (
+                metadata["pdf_ipfs_cid"] in global_mappings
+                and db_combination in global_mappings[metadata["pdf_ipfs_cid"]]
+            ):
+                self.logger.info(
+                    f"Skipping {db_combination} - already processed for this PDF"
+                )
                 self.__update_mappings(metadata["pdf_ipfs_cid"], db_combination)
                 continue
 
@@ -418,9 +449,7 @@ class Processor:
             # If the conversion already exists, use the existing conversion
             if converted_text_ipfs_cid:
                 # Fetch converted text content from IPFS
-                converted_text = self._query_ipfs_content(
-                    converted_text_ipfs_cid
-                )
+                converted_text = self._query_ipfs_content(converted_text_ipfs_cid)
                 if converted_text:
                     self.convert_cache[converter_func] = converted_text
                     self.logger.info("Using existing markdown conversion")
@@ -446,7 +475,9 @@ class Processor:
                 # Upload converted text to IPFS and commit to Git
                 self.__write_to_file(converted_text, self.tmp_file_path)
 
-                converted_text_ipfs_cid = self.ipfs_client.upload_file(self.tmp_file_path)
+                converted_text_ipfs_cid = self.ipfs_client.upload_file(
+                    self.tmp_file_path
+                )
 
                 self.graph_db.add_ipfs_node(converted_text_ipfs_cid)
                 self.graph_db.create_relationship(
@@ -460,9 +491,7 @@ class Processor:
             if metadata_cid is None:
                 self.logger.info("Creating or retrieving metadata node...")
                 metadata_cid = self._create_or_get_metadata_node(
-                    metadata["pdf_ipfs_cid"], 
-                    self.convert_cache[converter_func],
-                    doc_id
+                    metadata["pdf_ipfs_cid"], self.convert_cache[converter_func], doc_id
                 )
                 if metadata_cid:
                     all_authored_nodes.append(metadata_cid)
@@ -471,7 +500,9 @@ class Processor:
                     self.logger.warning("Failed to create metadata node")
 
             # Step 2.2: Chunking
-            self.logger.info(f"Starting chunking process for {converter_func}_{chunker_func}")
+            self.logger.info(
+                f"Starting chunking process for {converter_func}_{chunker_func}"
+            )
             converted_text = self.convert_cache[converter_func]
             chunk_cache_key = f"{converter_func}_{chunker_func}"
             if chunk_cache_key not in self.chunk_cache:
@@ -487,7 +518,7 @@ class Processor:
             # Step 2.2.1: Process all chunks and get their CIDs
             chunk_cids = []
             self.logger.info(f"Processing {len(chunked_text)} chunks...")
-            
+
             for chunk_i in chunked_text:
                 self.__write_to_file(chunk_i, self.tmp_file_path)
 
@@ -497,22 +528,33 @@ class Processor:
             # Batch add all chunk nodes to graph
             self.logger.info(f"Adding {len(chunk_cids)} chunk nodes to graph...")
             self.graph_db.add_ipfs_nodes_batch(chunk_cids)
-            
+
             # Add chunk CIDs to authored nodes list
             all_authored_nodes.extend(chunk_cids)
-            
+
             # Create CHUNKED_BY relationships for chunks
             chunk_relationships = []
             for chunk_cid in chunk_cids:
-                chunk_relationships.append((converted_text_ipfs_cid, chunk_cid, f"CHUNKED_BY_{chunker_func}"))
-            
-            self.logger.info(f"Creating {len(chunk_relationships)} CHUNKED_BY relationships...")
+                chunk_relationships.append(
+                    (converted_text_ipfs_cid, chunk_cid, f"CHUNKED_BY_{chunker_func}")
+                )
+
+            self.logger.info(
+                f"Creating {len(chunk_relationships)} CHUNKED_BY relationships..."
+            )
             self.graph_db.create_relationships_batch(chunk_relationships)
 
             # Step 2.3: Batch Embedding
-            self.logger.info(f"Batch processing embeddings for {len(chunked_text)} chunks...")
-            embeddings = embed_batch(embeder_type=embedder_func, input_texts=chunked_text, batch_size=32, user_email=self.user_email)
-            
+            self.logger.info(
+                f"Batch processing embeddings for {len(chunked_text)} chunks..."
+            )
+            embeddings = embed_batch(
+                embeder_type=embedder_func,
+                input_texts=chunked_text,
+                batch_size=32,
+                user_email=self.user_email,
+            )
+
             # Step 2.4: Create embedding relationships
             embedding_cids = []
             for embedding in embeddings:
@@ -520,25 +562,36 @@ class Processor:
 
                 embedding_ipfs_cid = self.ipfs_client.upload_file(self.tmp_file_path)
                 embedding_cids.append(embedding_ipfs_cid)
-            
+
             # Batch add all embedding nodes to graph
-            self.logger.info(f"Adding {len(embedding_cids)} embedding nodes to graph...")
+            self.logger.info(
+                f"Adding {len(embedding_cids)} embedding nodes to graph..."
+            )
             self.graph_db.add_ipfs_nodes_batch(embedding_cids)
-            
+
             # Add embedding CIDs to authored nodes list
             all_authored_nodes.extend(embedding_cids)
-            
+
             # Create EMBEDDED_BY relationships for embeddings
             embedding_relationships = []
             for chunk_cid, embedding_cid in zip(chunk_cids, embedding_cids):
-                embedding_relationships.append((chunk_cid, embedding_cid, f"EMBEDDED_BY_{embedder_func}"))
-                
-            self.logger.info(f"Creating {len(embedding_relationships)} EMBEDDED_BY relationships...")
+                embedding_relationships.append(
+                    (chunk_cid, embedding_cid, f"EMBEDDED_BY_{embedder_func}")
+                )
+
+            self.logger.info(
+                f"Creating {len(embedding_relationships)} EMBEDDED_BY relationships..."
+            )
             self.graph_db.create_relationships_batch(embedding_relationships)
-            
+
             # Create all AUTHORED_BY relationships in one batch
-            authored_relationships = [(node_cid, self.author_cid, "AUTHORED_BY") for node_cid in all_authored_nodes]
-            self.logger.info(f"Creating {len(authored_relationships)} AUTHORED_BY relationships in one batch...")
+            authored_relationships = [
+                (node_cid, self.author_cid, "AUTHORED_BY")
+                for node_cid in all_authored_nodes
+            ]
+            self.logger.info(
+                f"Creating {len(authored_relationships)} AUTHORED_BY relationships in one batch..."
+            )
             self.graph_db.create_relationships_batch(authored_relationships)
-                
+
             self.__update_mappings(metadata["pdf_ipfs_cid"], db_combination)

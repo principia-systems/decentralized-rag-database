@@ -46,7 +46,7 @@ def load_config() -> Dict[str, Any]:
 def evaluate_user_queries(user_email: str, query: str = None):
     """
     Run the evaluation agent for a specific user.
-    
+
     Args:
         user_email: Email of the user for user-specific database evaluation
         query: Optional query string. If None, uses query from config
@@ -58,13 +58,13 @@ def evaluate_user_queries(user_email: str, query: str = None):
     # Construct user-specific database path
     base_db_path = PROJECT_ROOT / "src" / "database" / user_email
     user_db_path = str(base_db_path)
-    
+
     logger.info(f"Running evaluation for user: {user_email}")
     logger.info(f"Using database path: {user_db_path}")
 
     # Use provided query or get from config
     evaluation_query = query or config.get("query", "No query provided")
-    
+
     # Initialize evaluation agent
     agent = EvaluationAgent(model_name=config.get("model_name"))
 
@@ -88,7 +88,7 @@ def evaluate_user_queries(user_email: str, query: str = None):
         with open(output_file, "w") as f:
             json.dump(evaluation, f, indent=2)
         logger.info(f"Saved evaluation results to {output_file}")
-    
+
     # Also save to temp directory with user-specific path
     temp_eval_dir = PROJECT_ROOT / "temp" / user_email / "evaluation"
     os.makedirs(temp_eval_dir, exist_ok=True)
@@ -104,19 +104,19 @@ def main():
     """Main function to run the evaluation agent using config file."""
     # Load configuration
     config = load_config()
-    
+
     # Get user email from config
     user_email = config.get("user_email", "user@example.com")
-    
+
     # Call the user-specific evaluation function with auto-discovery
     evaluation = evaluate_user_queries(user_email)
-    
+
     # Print results to stdout
     print(json.dumps(evaluation, indent=2))
 
 
 # Export the function for API usage
-__all__ = ['evaluate_user_queries', 'main']
+__all__ = ["evaluate_user_queries", "main"]
 
 
 if __name__ == "__main__":

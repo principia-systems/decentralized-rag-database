@@ -4,7 +4,6 @@ IPFS utilities module.
 This module provides unified IPFS operations supporting both Lighthouse and local IPFS.
 """
 
-import json
 import os
 import tempfile
 import urllib.parse
@@ -22,122 +21,136 @@ logger = get_logger(__name__)
 
 class IPFSClient:
     """Handles IPFS operations supporting both Lighthouse and local IPFS."""
-    
+
     def __init__(self, mode: str = None, api_key: str = None, socket_path: str = None):
         """
         Initialize IPFS client.
-        
+
         Args:
             mode: IPFS mode - 'lighthouse' or 'local'. Defaults to environment variable IPFS_MODE
             api_key: API key for Lighthouse (required for lighthouse mode)
             socket_path: Unix socket path for local IPFS (required for local mode)
         """
-        self.mode = mode or os.getenv('IPFS_MODE', 'lighthouse')
-        
-        if self.mode == 'lighthouse':
-            self.api_key = api_key or os.getenv('LIGHTHOUSE_TOKEN')
+        self.mode = mode or os.getenv("IPFS_MODE", "lighthouse")
+
+        if self.mode == "lighthouse":
+            self.api_key = api_key or os.getenv("LIGHTHOUSE_TOKEN")
             if not self.api_key:
                 raise ValueError("API key required for Lighthouse mode")
             self.api_url = "https://node.lighthouse.storage/api/v0/add"
             self.gateway_url = "https://gateway.lighthouse.storage/ipfs"
-            
-        elif self.mode == 'local':
-            self.socket_path = socket_path or os.getenv('IPFS_SOCKET_PATH', '/root/.ipfs/api.sock')
+
+        elif self.mode == "local":
+            self.socket_path = socket_path or os.getenv(
+                "IPFS_SOCKET_PATH", "/root/.ipfs/api.sock"
+            )
             if not os.path.exists(self.socket_path):
                 raise ValueError(f"IPFS socket not found at {self.socket_path}")
-            
+
             # Follow the exact pattern from the user's working example
             encoded = urllib.parse.quote_plus(self.socket_path)
             self.base_url = f"http+unix://{encoded}/api/v0"
-            
+
             # Create a session that speaks HTTP over UDS
             self.ipfs_unix_session = requests_unixsocket.Session()
-            self.ipfs_unix_session.mount("http+unix://", requests_unixsocket.UnixAdapter())
-            self.gateway_url = os.getenv('IPFS_GATEWAY_URL', 'http://localhost:8080/ipfs')
-            
+            self.ipfs_unix_session.mount(
+                "http+unix://", requests_unixsocket.UnixAdapter()
+            )
+            self.gateway_url = os.getenv(
+                "IPFS_GATEWAY_URL", "http://localhost:8080/ipfs"
+            )
+
         else:
-            raise ValueError(f"Invalid IPFS mode: {mode}. Must be 'lighthouse' or 'local'")
-    
+            raise ValueError(
+                f"Invalid IPFS mode: {mode}. Must be 'lighthouse' or 'local'"
+            )
+
     def upload_file(self, filepath: Union[str, Path]) -> str:
         """
         Upload a file to IPFS and return the CID.
-        
+
         Args:
             filepath: Path to the file to upload
-            
+
         Returns:
             IPFS CID of the uploaded file
         """
         filepath = Path(filepath)
         if not filepath.exists():
             raise FileNotFoundError(f"File not found: {filepath}")
-            
-        if self.mode == 'lighthouse':
-            with open(filepath, 'rb') as f:
+
+        if self.mode == "lighthouse":
+            with open(filepath, "rb") as f:
                 headers = {"Authorization": f"Bearer {self.api_key}"}
-                response = requests.post(self.api_url, headers=headers, files={'file': f})
+                response = requests.post(
+                    self.api_url, headers=headers, files={"file": f}
+                )
         else:  # local mode
             # Follow the exact pattern from the user's working example
-            with open(filepath, 'rb') as f:
+            with open(filepath, "rb") as f:
                 file_content = f.read()
-            
-            files = {
-                "file": (filepath.name, file_content, "application/octet-stream")
-            }
-            
-            response = self.ipfs_unix_session.post(f"{self.base_url}/add?pin=true", files=files)
-        
+
+            files = {"file": (filepath.name, file_content, "application/octet-stream")}
+
+            response = self.ipfs_unix_session.post(
+                f"{self.base_url}/add?pin=true", files=files
+            )
+
         response.raise_for_status()
-        return response.json()['Hash']
-    
+        return response.json()["Hash"]
+
     def upload_text(self, text: str, filename: Optional[str] = None) -> str:
         """
         Upload text content to IPFS and return the CID.
-        
+
         Args:
             text: Text content to upload
             filename: Optional filename for the temporary file
-            
+
         Returns:
             IPFS CID of the uploaded content
         """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
             tmp.write(text)
             tmp_path = tmp.name
-        
+
         try:
             cid = self.upload_file(tmp_path)
             return cid
         finally:
             os.unlink(tmp_path)
-    
+
     def get_content(self, cid: str) -> str:
         """
         Retrieve content from IPFS by CID.
-        
+
         Args:
             cid: IPFS CID to retrieve
-            
+
         Returns:
             Content as string
         """
-        if self.mode == 'lighthouse':
+        if self.mode == "lighthouse":
             url = f"{self.gateway_url}/{cid}"
             response = requests.get(url)
         else:  # local mode
             # Follow the exact pattern from the user's working example
             response = self.ipfs_unix_session.post(f"{self.base_url}/cat?arg={cid}")
-        
+
         response.raise_for_status()
-        return response.text if hasattr(response, 'text') else response.content.decode('utf-8')
-    
+        return (
+            response.text
+            if hasattr(response, "text")
+            else response.content.decode("utf-8")
+        )
+
     def get_gateway_url(self, cid: str) -> str:
         """
         Get the gateway URL for a CID.
-        
+
         Args:
             cid: IPFS CID
-            
+
         Returns:
             Gateway URL
         """
@@ -148,23 +161,25 @@ class IPFSClient:
 _ipfs_client: Optional[IPFSClient] = None
 
 
-def get_ipfs_client(mode: str = None, api_key: str = None, socket_path: str = None) -> IPFSClient:
+def get_ipfs_client(
+    mode: str = None, api_key: str = None, socket_path: str = None
+) -> IPFSClient:
     """
     Get or create the singleton IPFS client instance.
-    
+
     Args:
         mode: IPFS mode - 'lighthouse' or 'local'
         api_key: API key for Lighthouse
         socket_path: Unix socket path for local IPFS
-        
+
     Returns:
         IPFSClient instance
     """
     global _ipfs_client
-    
+
     if _ipfs_client is None:
         _ipfs_client = IPFSClient(mode=mode, api_key=api_key, socket_path=socket_path)
-    
+
     return _ipfs_client
 
 
@@ -174,6 +189,6 @@ def upload_to_lighthouse(filepath: Union[str, Path], ipfs_api_key: str) -> str:
     Uploads a file to IPFS and returns the gateway url.
     This function maintains compatibility with existing code.
     """
-    client = get_ipfs_client(mode='lighthouse', api_key=ipfs_api_key)
+    client = get_ipfs_client(mode="lighthouse", api_key=ipfs_api_key)
     cid = client.upload_file(filepath)
-    return client.get_gateway_url(cid) 
+    return client.get_gateway_url(cid)
