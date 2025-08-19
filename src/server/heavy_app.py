@@ -250,7 +250,7 @@ class EmbedRequest(BaseModel):
     user_email: str
 
 
-@app.post("/api/ingest/gdrive", response_model=IngestGDriveResponse)
+@app.post("/api/v1/users/ingestion", response_model=IngestGDriveResponse)
 async def ingest_gdrive_pdfs(request: IngestGDriveRequest):
     """
     Ingest PDFs from a public Google Drive folder.

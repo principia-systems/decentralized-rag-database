@@ -319,7 +319,7 @@ async def batch_retrieve_ipfs_data(request: BatchRetrievalRequest):
         raise HTTPException(status_code=500, detail=f"Batch retrieval failed: {str(e)}")
 
 
-@app.get("/api/status")
+@app.get("/api/v1/user/status")
 async def get_user_status(user_email: str):
     """Get processing status for a specific user - fast status check"""
     # Create user-specific logger for this request

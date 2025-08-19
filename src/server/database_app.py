@@ -451,7 +451,7 @@ async def store_evaluation(request: StoreEvaluationRequest):
         )
 
 
-@app.post("/api/evaluate")
+@app.post("/api/v1/user/evaluate")
 async def evaluate_endpoint(request: EvaluationRequest):
     """Endpoint for evaluation - fast queries"""
     # Create user-specific logger for this request
