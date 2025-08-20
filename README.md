@@ -237,7 +237,7 @@ CoopHive provides public v1 API endpoints for customer integration. All v1 endpo
         "documents": [
           {
             "content": "CRISPR-Cas9 has revolutionized...",
-            "metadata": {"source": "paper1.pdf", "page": 3},
+            "metadata": {...},
             "score": 0.95
           }
         ]
@@ -279,7 +279,7 @@ CoopHive provides public v1 API endpoints for customer integration. All v1 endpo
         "final_score": 0.89,
         "rank": 1,
         "collection": "markitdown_recursive_bge",
-        "metadata": {"source": "paper1.pdf", "page": 3}
+        "metadata": {...}
       }
     ],
     "total_aggregated_items": 5
@@ -293,15 +293,33 @@ CoopHive provides public v1 API endpoints for customer integration. All v1 endpo
   - `frequency_weight`: Weight for frequency in hybrid mode (default: `0.3`)
   - `min_similarity_threshold`: Minimum similarity to consider (default: `0.1`)
 
-### 🌐 Web Interface - Authenticated Proxy (Port 3000)
+#### Metadata Structure
 
-The frontend provides authenticated proxy routes to all v1 endpoints:
+The `metadata` field in responses contains comprehensive document information:
 
-- **Light Server**: `/api/light/v1/*` → `http://localhost:5001/api/v1/*`
-- **Heavy Server**: `/api/heavy/v1/*` → `http://localhost:5002/api/v1/*`  
-- **Database Server**: `/api/database/v1/*` → `http://localhost:5003/api/v1/*`
+```json
+{
+  "content_cid": "QmABC123...",
+  "root_cid": "QmXYZ789...",
+  "embedding_cid": "QmDEF456...",
+  "content": "Full text content of the chunk",
+  "title": "Paper Title from PDF metadata",
+  "authors": "['Author 1', 'Author 2']",
+  "abstract": "Paper abstract text",
+  "doi": "10.1000/journal.2023.001",
+  "publication_date": "2023-01-01",
+  "journal": "Journal Name",
+  "keywords": "['keyword1', 'keyword2']",
+  "url": "https://example.com/paper.pdf"
+}
+```
 
-**Authentication Required**: All proxy routes require valid NextAuth session.
+**Key Fields**:
+- `content_cid`: IPFS hash of the text chunk
+- `root_cid`: IPFS hash of the original PDF document
+- `embedding_cid`: IPFS hash of the vector embedding
+- `content`: The actual text content of the chunk
+- PDF metadata fields (when available): `title`, `authors`, `abstract`, `doi`, etc.
 
 ### 📋 Usage Examples
 
