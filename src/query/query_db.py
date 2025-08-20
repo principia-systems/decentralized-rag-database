@@ -62,7 +62,7 @@ def discover_user_collections(user_email: str, db_path: str = None) -> List[str]
         return []
 
 
-def query_collection(collection_name, user_query, db_path=None, user_email=None):
+def query_collection(collection_name, user_query, db_path=None, user_email=None, k=5):
     """
     Query a ChromaDB collection with a natural language query.
 
@@ -77,6 +77,7 @@ def query_collection(collection_name, user_query, db_path=None, user_email=None)
         user_query: Natural language query string
         db_path: Optional path to ChromaDB directory. If None, uses default path
         user_email: Optional user email for user-specific database path
+        k: Number of results to retrieve. Defaults to 5
 
     Returns:
         JSON string containing query results with metadata and similarity scores
@@ -128,7 +129,7 @@ def query_collection(collection_name, user_query, db_path=None, user_email=None)
 
         values = collection.query(
             query_embeddings=[embedding],
-            n_results=5,
+            n_results=k,
             include=["metadatas", "documents", "distances"],
         )
 

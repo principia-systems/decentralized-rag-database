@@ -338,6 +338,7 @@ class EvaluationRequest(BaseModel):
     db_path: Optional[str] = None
     model_name: str = "openai/gpt-4o-mini"
     user_email: str
+    k: int = 5  # Number of results to retrieve per collection
 
 
 class EvaluationOption(BaseModel):
@@ -480,6 +481,7 @@ async def evaluate_endpoint(request: EvaluationRequest):
             query=request.query,
             db_path=user_db_path,
             user_email=request.user_email,
+            k=request.k,
         )
 
         # Read the results from the JSON file
