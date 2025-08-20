@@ -7,7 +7,7 @@ and evaluating search results.
 
 from src.query.evaluation_agent import EvaluationAgent
 from src.query.query_db import query_collection
-from src.query.cross_encoder import (
+from src.reranking.cross_encoder import (
     CrossEncoderRanker,
     CrossEncoderConfig,
     MODEL_PRESETS,

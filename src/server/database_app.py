@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Any
 from pathlib import Path
 from src.utils.logging_utils import get_user_logger
 from src.query.evaluation_agent import EvaluationAgent
-from src.query.cross_encoder import CrossEncoderRanker
+from src.reranking.cross_encoder import CrossEncoderRanker
 from fastapi import FastAPI, HTTPException
 import json
 from fastapi.middleware.cors import CORSMiddleware
