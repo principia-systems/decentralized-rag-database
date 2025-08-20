@@ -223,7 +223,8 @@ CoopHive provides public v1 API endpoints for customer integration. All v1 endpo
     "query": "What are the latest developments in CRISPR gene editing?",
     "user_email": "user@example.com",
     "model_name": "openai/gpt-4o-mini",
-    "collections": ["optional_collection_filter"]
+    "collections": ["optional_collection_filter"],
+    "k": 5
   }
   ```
 - **Response**: 
@@ -246,6 +247,51 @@ CoopHive provides public v1 API endpoints for customer integration. All v1 endpo
     "query_time": 1.23
   }
   ```
+
+**`POST /api/v1/user/evaluate/aggregate`**
+- **Description**: Query user's databases with intelligent result aggregation
+- **Content-Type**: `application/json`
+- **Request Body**:
+  ```json
+  {
+    "query": "What are the latest developments in CRISPR gene editing?",
+    "user_email": "user@example.com",
+    "model_name": "openai/gpt-4o-mini",
+    "k": 10,
+    "aggregation_strategy": "hybrid",
+    "top_k": 5,
+    "similarity_weight": 0.7,
+    "frequency_weight": 0.3,
+    "min_similarity_threshold": 0.1
+  }
+  ```
+- **Response**: 
+  ```json
+  {
+    "query": "What are the latest developments in CRISPR?",
+    "user_email": "user@example.com",
+    "aggregation_strategy": "hybrid",
+    "aggregated_results": [
+      {
+        "content": "CRISPR-Cas9 has revolutionized gene editing...",
+        "similarity": 0.95,
+        "frequency": 3,
+        "final_score": 0.89,
+        "rank": 1,
+        "collection": "markitdown_recursive_bge",
+        "metadata": {"source": "paper1.pdf", "page": 3}
+      }
+    ],
+    "total_aggregated_items": 5
+  }
+  ```
+- **Parameters**:
+  - `aggregation_strategy`: `"frequency"`, `"similarity"`, or `"hybrid"` (default: `"hybrid"`)
+  - `k`: Number of results per collection (default: `5`)
+  - `top_k`: Final number of aggregated results (default: `5`)
+  - `similarity_weight`: Weight for similarity in hybrid mode (default: `0.7`)
+  - `frequency_weight`: Weight for frequency in hybrid mode (default: `0.3`)
+  - `min_similarity_threshold`: Minimum similarity to consider (default: `0.1`)
 
 ### 🌐 Web Interface - Authenticated Proxy (Port 3000)
 
@@ -281,7 +327,21 @@ curl -X POST http://localhost:5003/api/v1/user/evaluate \
   -H "Content-Type: application/json" \
   -d '{
     "query": "machine learning applications in biology",
-    "user_email": "researcher@university.edu"
+    "user_email": "researcher@university.edu",
+    "k": 5
+  }'
+```
+
+#### 4. Query with Result Aggregation
+```bash
+curl -X POST http://localhost:5003/api/v1/user/evaluate/aggregate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "machine learning applications in biology",
+    "user_email": "researcher@university.edu",
+    "k": 10,
+    "aggregation_strategy": "hybrid",
+    "top_k": 5
   }'
 ```
 
