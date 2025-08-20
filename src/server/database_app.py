@@ -585,7 +585,7 @@ async def evaluate_aggregate_endpoint(request: EvaluationAggregateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/rerank")
+@app.post("/api/v1/user/reranker")
 async def rerank_endpoint(request: RerankRequest):
     """Rerank a list of items for a query using a cross-encoder model."""
     user_logger = get_user_logger(request.user_email, "rerank")

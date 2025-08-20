@@ -1,24 +1,16 @@
-# 🧠 CoopHive: Decentralized RAG Database & Web Platform
+# 🧠 CoopHive: Decentralized RAG Database
 
-CoopHive is a comprehensive decentralized RAG (Retrieval-Augmented Generation) platform for scientific literature. It features a modular backend processing system and a modern web interface for document ingestion, processing, querying, and collaborative research.
+CoopHive is a decentralized RAG (Retrieval-Augmented Generation) platform for scientific literature with a modular backend processing system for document ingestion, processing, and querying.
 
 ---
 
 ## 🏗️ Architecture
 
-CoopHive consists of two main components:
-
-### Backend: Decentralized RAG Database (`decentralized-rag-database/`)
+### Decentralized RAG Database
 - **Modular Processing Pipeline**: Configurable document conversion, chunking, and embedding
 - **Multi-Server Architecture**: Light, Heavy, and Database servers for optimized performance
 - **IPFS Integration**: Decentralized storage and content addressing
 - **Token Rewards**: Blockchain-based incentivization system
-
-### Frontend: Web Platform (`dvd-frontend/`)
-- **Modern Next.js App**: Built with T3 stack (TypeScript, Tailwind, NextAuth)
-- **Authenticated API Gateway**: Secure proxy to backend services
-- **Real-time Chat Interface**: Interactive research assistant
-- **User Management**: Whitelist-based access control
 
 ## ✨ Key Features
 
@@ -26,8 +18,6 @@ CoopHive consists of two main components:
 - **📊 Reproducibility**: Deterministic pipelines with version-controlled configurations
 - **🔗 Transparency**: All processing traceable through Git commits and IPFS hashes
 - **🚀 Scalable Servers**: Distributed architecture for optimal resource utilization
-- **🔐 Secure Access**: NextAuth-based authentication with role-based permissions
-- **💬 Interactive Chat**: Real-time research assistance with context-aware responses
 - **📈 Progress Tracking**: Real-time job status and completion monitoring
 
 ---
@@ -37,13 +27,11 @@ CoopHive consists of two main components:
 ### Prerequisites
 
 - **Backend**: Python 3.10+, Poetry, Docker (optional)
-- **Frontend**: Node.js 18+, npm/yarn
 - **Services**: OpenAI API, Lighthouse/IPFS, Neo4j, PostgreSQL
 - **Optional**: NVIDIA GPU for local embeddings
 
 ### Installation
 
-#### Backend Setup
 ```bash
 git clone https://github.com/coophive/decentralized-rag-database.git
 cd decentralized-rag-database
@@ -53,16 +41,9 @@ poetry install
 cp .env.example .env
 ```
 
-#### Frontend Setup
-```bash
-cd ../dvd-frontend
-npm install
-cp .env.example .env.local
-```
-
 ### 💡 Environment Variables
 
-#### Backend Configuration (`.env`)
+Configuration (`.env`):
 ```bash
 # Core APIs
 OPENAI_API_KEY=your_openai_key
@@ -87,31 +68,6 @@ DATABASE_SERVER_URL=http://localhost:5003
 GPU_SPLIT=0.75  # Percentage of GPUs for local embeddings
 ```
 
-#### Frontend Configuration (`.env.local`)
-```bash
-# NextAuth Configuration
-NEXTAUTH_SECRET=your_nextauth_secret
-NEXTAUTH_URL=http://localhost:3000
-
-# Server URLs (backend services)
-LIGHT_SERVER_URL=http://localhost:5001
-HEAVY_SERVER_URL=http://localhost:5002
-DATABASE_SERVER_URL=http://localhost:5003
-
-# OpenRouter (server-side only)
-OPENROUTER_API_KEY=your_openrouter_key
-```
-
-#### GPU Configuration
-
-The `GPU_SPLIT` environment variable controls multi-GPU usage for local embedding models:
-
-- **0.75** (default): Uses 75% of available GPUs
-- **1.0**: Uses all available GPUs  
-- **0.5**: Uses 50% of available GPUs
-- **Local models**: `bge`, `bgelarge`, `e5large`
-- **API models**: `openai`, `nvidia` (not affected)
-
 ### Running the Platform
 
 #### Start Backend Servers
@@ -126,34 +82,10 @@ bash scripts/start_heavy_server.sh
 bash scripts/start_database_server.sh
 ```
 
-#### Start Frontend
-```bash
-# Terminal 4 - Web Interface (port 3000)
-cd dvd-frontend
-npm run dev
-```
-
-#### Access the Platform
-- **Web Interface**: http://localhost:3000
-- **API Documentation**: 
-  - Light Server: http://localhost:5001/docs
-  - Heavy Server: http://localhost:5002/docs  
-  - Database Server: http://localhost:5003/docs
-
-#### CLI Processing (Alternative)
-```bash
-bash scripts/run_processor.sh         # Convert, chunk, embed documents
-bash scripts/run_db_creator.sh        # Recreate DBs from IPFS
-bash scripts/run_evaluation.sh        # Query and evaluate DBs
-bash scripts/run_token_reward.sh      # Distribute token rewards
-```
-
-### Code Quality and Testing
-
-```bash
-bash scripts/lint.sh                   # Lint (black, isort, flake8, mypy)
-bash scripts/test.sh --integration      # Run integration tests
-```
+#### API Documentation
+- Light Server: http://localhost:5001/docs
+- Heavy Server: http://localhost:5002/docs  
+- Database Server: http://localhost:5003/docs
 
 ---
 
@@ -293,6 +225,48 @@ CoopHive provides public v1 API endpoints for customer integration. All v1 endpo
   - `frequency_weight`: Weight for frequency in hybrid mode (default: `0.3`)
   - `min_similarity_threshold`: Minimum similarity to consider (default: `0.1`)
 
+**`POST /api/v1/user/reranker`**
+- **Description**: Rerank a list of text items using a cross-encoder model for better relevance scoring
+- **Content-Type**: `application/json`
+- **Request Body**:
+  ```json
+  {
+    "user_email": "user@example.com",
+    "query": "What are the latest developments in CRISPR gene editing?",
+    "items": [
+      "CRISPR-Cas9 has revolutionized gene editing...",
+      "Gene therapy approaches using viral vectors...",
+      "Recent advances in base editing techniques..."
+    ],
+    "model_preset": "msmarco-MiniLM-L-6-v2",
+    "batch_size": 16,
+    "max_length": 256,
+    "top_k": 10,
+    "descending": true,
+    "device": "cpu"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "results": [
+      {"item": "Text item 1...", "score": 0.95},
+      {"item": "Text item 3...", "score": 0.87}
+    ]
+  }
+  ```
+- **Parameters**:
+  - `user_email`: User identifier for logging and tracking (required)
+  - `query`: The search query to rank items against (required)
+  - `items`: List of text items to rerank (required)
+  - `model_preset`: Cross-encoder model to use (default: `"msmarco-MiniLM-L-6-v2"`)
+  - `batch_size`: Processing batch size for efficiency (default: `16`)
+  - `max_length`: Maximum token length for input sequences (default: `256`)
+  - `top_k`: Number of top results to return (optional, returns all if not specified)
+  - `descending`: Sort order - true for highest scores first (default: `true`)
+  - `device`: Processing device - `"cpu"` or `"cuda"` (default: `"cpu"`)
+
 #### Metadata Structure
 
 The `metadata` field in responses contains comprehensive document information:
@@ -321,160 +295,18 @@ The `metadata` field in responses contains comprehensive document information:
 - `content`: The actual text content of the chunk
 - PDF metadata fields (when available): `title`, `authors`, `abstract`, `doi`, etc.
 
-### 📋 Usage Examples
-
-#### 1. Check Processing Status
-```bash
-curl "http://localhost:5001/api/v1/user/status?user_email=researcher@university.edu"
-```
-
-#### 2. Start Document Processing
-```bash
-curl -X POST http://localhost:5002/api/v1/users/ingestion \
-  -H "Content-Type: application/json" \
-  -d '{
-    "drive_url": "https://drive.google.com/drive/folders/1ABC123",
-    "processing_combinations": [["openai", "recursive", "openai"]],
-    "user_email": "researcher@university.edu"
-  }'
-```
-
-#### 3. Query Processed Documents
-```bash
-curl -X POST http://localhost:5003/api/v1/user/evaluate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "machine learning applications in biology",
-    "user_email": "researcher@university.edu",
-    "k": 5
-  }'
-```
-
-#### 4. Query with Result Aggregation
-```bash
-curl -X POST http://localhost:5003/api/v1/user/evaluate/aggregate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "machine learning applications in biology",
-    "user_email": "researcher@university.edu",
-    "k": 10,
-    "aggregation_strategy": "hybrid",
-    "top_k": 5
-  }'
-```
-
-### 🔒 Rate Limits & Authentication
-
-- **Rate Limits**: 100 requests/minute per user
-- **Authentication**: Whitelist-based access control
-- **API Keys**: Contact admin for production access
-- **CORS**: Enabled for web applications
-
----
-
-## 📚 System Components
-
-### 🔄 Processing Pipeline
-
-The processing pipeline converts documents through three configurable stages:
-
-1. **Conversion**: PDF → Markdown
-   - `marker`: High-quality academic PDF conversion
-   - `openai`: GPT-4 powered conversion with OCR
-   - `markitdown`: Microsoft's open-source converter
-
-2. **Chunking**: Document → Text Chunks  
-   - `fixed_length`: Fixed character/token chunks
-   - `recursive`: Recursive text splitting
-   - `markdown_aware`: Preserves markdown structure
-   - `semantic_split`: AI-powered semantic boundaries
-
-3. **Embedding**: Text → Vector Embeddings
-   - `openai`: OpenAI text-embedding-ada-002
-   - `nvidia`: NVIDIA NeMo embeddings
-   - `bge`, `bgelarge`: BGE models (local GPU)
-   - `e5large`: E5 model (local GPU)
-
-### 🗄️ Database Architecture
-
-- **ChromaDB**: Vector storage for embeddings
-- **Neo4j**: Graph database for lineage tracking
-- **PostgreSQL**: User data and job tracking
-- **IPFS/Lighthouse**: Decentralized content storage
-
-### 🔍 Query & Evaluation
-
-- **Multi-DB Querying**: Searches across user's vector databases
-- **Cross-Encoder Ranking**: Re-ranks results for relevance
-- **LLM Integration**: OpenRouter/OpenAI for response generation
-- **Evaluation Storage**: Tracks user feedback for improvement
-
-### 🏆 Token Rewards
-
-- **ERC20 Integration**: Blockchain-based contributor rewards
-- **Contribution Tracking**: Git commits and processing jobs
-- **Reward Models**: Job count, bonuses, time decay
-- **Smart Contracts**: Automated distribution via Hardhat
-
-### 🔐 Authentication & Security
-
-- **NextAuth.js**: Session-based authentication
-- **Whitelist System**: Admin-controlled user access
-- **API Gateway**: Secure proxy to backend services
-- **CORS Configuration**: Development and production modes
-
----
-
-## 🛠️ Tech Stack
-
-### Backend
-- **Python 3.10+** - Core processing engine
-- **FastAPI** - High-performance API servers
-- **ChromaDB** - Vector database for embeddings
-- **Neo4j** - Graph database for lineage tracking
-- **PostgreSQL** - Relational data storage
-- **IPFS/Lighthouse** - Decentralized content storage
-- **Poetry** - Dependency management
-
-### Frontend  
-- **Next.js 15** - React framework with App Router
-- **TypeScript** - Type-safe development
-- **NextAuth.js** - Authentication system
-- **Tailwind CSS** - Utility-first styling
-- **Radix UI** - Accessible component primitives
-- **T3 Stack** - Type-safe full-stack development
-
-### AI/ML
-- **OpenAI API** - GPT models and embeddings
-- **OpenRouter** - Multi-model API gateway
-- **NVIDIA NeMo** - Enterprise embeddings
-- **BGE/E5 Models** - Local embedding models
-- **Sentence Transformers** - Cross-encoder ranking
-
-### Blockchain
-- **Hardhat** - Ethereum development framework
-- **Solidity** - Smart contract development
-- **ERC20** - Token standard implementation
-
-### DevOps
-- **Docker** - Containerization
-- **Poetry** - Python package management
-- **ESLint/Prettier** - Code formatting
-- **GitHub Actions** - CI/CD (optional)
-
 ---
 
 ## 📄 Project Structure
 
 ```bash
-coophive-markdown-converter/
+decentralized-rag-database/
 ├── config/        # YAML pipeline configs
-├── src/       # Core libraries (processing, storage, rewards)
+├── src/           # Core libraries (processing, storage, rewards)
 ├── scripts/       # CLI scripts for pipelines
 ├── contracts/     # Blockchain contract ABIs
 ├── docker/        # Container specs
 ├── erc20-token/   # Token contract config
-├── papers/        # Example documents
 ├── tests/         # Unit and integration tests
 └── .github/       # CI/CD configurations
 ```
