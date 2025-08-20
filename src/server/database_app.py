@@ -3,7 +3,8 @@ from typing import List, Optional, Dict, Any
 from pathlib import Path
 from src.utils.logging_utils import get_user_logger
 from src.query.evaluation_agent import EvaluationAgent
-from src.query.cross_encoder import CrossEncoderRanker
+from src.reranking.cross_encoder import CrossEncoderRanker
+from src.reranking.aggregator import ResultAggregator, AggregationStrategy, AggregationConfig
 from fastapi import FastAPI, HTTPException
 import json
 from fastapi.middleware.cors import CORSMiddleware
@@ -338,6 +339,22 @@ class EvaluationRequest(BaseModel):
     db_path: Optional[str] = None
     model_name: str = "openai/gpt-4o-mini"
     user_email: str
+    k: int = 5  # Number of results to retrieve per collection
+
+
+class EvaluationAggregateRequest(BaseModel):
+    query: str
+    collections: Optional[List[str]] = None  # If None, auto-discovers collections
+    db_path: Optional[str] = None
+    model_name: str = "openai/gpt-4o-mini"
+    user_email: str
+    k: int = 5  # Number of results to retrieve per collection
+    # Aggregation configuration
+    aggregation_strategy: str = "hybrid"  # "frequency", "similarity", or "hybrid"
+    top_k: int = 5  # Number of top results to keep after aggregation
+    similarity_weight: float = 0.7  # Weight for similarity in hybrid mode
+    frequency_weight: float = 0.3  # Weight for frequency in hybrid mode
+    min_similarity_threshold: float = 0.1  # Minimum similarity to consider
 
 
 class EvaluationOption(BaseModel):
@@ -480,6 +497,7 @@ async def evaluate_endpoint(request: EvaluationRequest):
             query=request.query,
             db_path=user_db_path,
             user_email=request.user_email,
+            k=request.k,
         )
 
         # Read the results from the JSON file
@@ -490,6 +508,80 @@ async def evaluate_endpoint(request: EvaluationRequest):
         return results
     except Exception as e:
         user_logger.error(f"Error in evaluation: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/user/evaluate/aggregate")
+async def evaluate_aggregate_endpoint(request: EvaluationAggregateRequest):
+    """Endpoint for evaluation with result aggregation"""
+    # Create user-specific logger for this request
+    user_logger = get_user_logger(request.user_email, "evaluation_aggregate")
+
+    try:
+        user_logger.info(f"Evaluating and aggregating query: {request.query}")
+        user_logger.debug(f"DB Path: {request.db_path}")
+        user_logger.debug(f"Model Name: {request.model_name}")
+        user_logger.debug(f"Aggregation Strategy: {request.aggregation_strategy}")
+        user_logger.info(f"User Email: {request.user_email}")
+
+        # Construct user-specific database path if not provided
+        if request.db_path is None:
+            base_db_path = PROJECT_ROOT / "src" / "database" / request.user_email
+            user_db_path = str(base_db_path)
+        else:
+            user_db_path = request.db_path
+
+        user_logger.info(f"Using database path: {user_db_path}")
+
+        # Initialize evaluation agent
+        agent = EvaluationAgent(model_name=request.model_name)
+
+        # Run query on collections with user-specific database path
+        results_file = agent.query_collections(
+            query=request.query,
+            db_path=user_db_path,
+            user_email=request.user_email,
+            k=request.k,
+        )
+
+        # Read the results from the JSON file
+        with open(results_file, "r") as f:
+            evaluation_results = json.load(f)
+
+        user_logger.info("Successfully completed evaluation query, now aggregating results")
+
+        # Validate and convert aggregation strategy
+        try:
+            strategy = AggregationStrategy(request.aggregation_strategy.lower())
+        except ValueError:
+            user_logger.error(f"Invalid aggregation strategy: {request.aggregation_strategy}")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid aggregation strategy: {request.aggregation_strategy}. Must be one of: frequency, similarity, hybrid"
+            )
+
+        # Create aggregation configuration
+        aggregation_config = AggregationConfig(
+            strategy=strategy,
+            top_k=request.top_k,
+            similarity_weight=request.similarity_weight,
+            frequency_weight=request.frequency_weight,
+            min_similarity_threshold=request.min_similarity_threshold,
+        )
+
+        # Initialize result aggregator
+        aggregator = ResultAggregator(config=aggregation_config, user_email=request.user_email)
+
+        # Aggregate the evaluation results
+        aggregated_results = aggregator.aggregate_evaluation_results(evaluation_results)
+
+        user_logger.info("Successfully completed evaluation and aggregation")
+        return aggregated_results
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        user_logger.error(f"Error in evaluation and aggregation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

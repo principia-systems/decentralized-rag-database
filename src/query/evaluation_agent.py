@@ -56,6 +56,7 @@ class EvaluationAgent:
         query: str,
         db_path: Optional[str] = None,
         user_email: Optional[str] = None,
+        k: int = 5,
     ) -> str:
         """
         Query multiple collections with the same query and store results.
@@ -64,6 +65,7 @@ class EvaluationAgent:
             query: Natural language query string
             db_path: Optional path to ChromaDB directory
             user_email: Optional user email for user-specific temp directory and auto-discovery
+            k: Number of results to retrieve per collection. Defaults to 5
 
         Returns:
             Path to the temporary JSON file containing all results
@@ -103,7 +105,7 @@ class EvaluationAgent:
             user_logger.info(f"Querying collection: {collection_name}")
             try:
                 result_json = query_collection(
-                    collection_name, query, db_path, user_email
+                    collection_name, query, db_path, user_email, k
                 )
                 result_data = json.loads(result_json)
                 collection_results[collection_name] = result_data

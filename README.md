@@ -223,7 +223,8 @@ CoopHive provides public v1 API endpoints for customer integration. All v1 endpo
     "query": "What are the latest developments in CRISPR gene editing?",
     "user_email": "user@example.com",
     "model_name": "openai/gpt-4o-mini",
-    "collections": ["optional_collection_filter"]
+    "collections": ["optional_collection_filter"],
+    "k": 5
   }
   ```
 - **Response**: 
@@ -236,7 +237,7 @@ CoopHive provides public v1 API endpoints for customer integration. All v1 endpo
         "documents": [
           {
             "content": "CRISPR-Cas9 has revolutionized...",
-            "metadata": {"source": "paper1.pdf", "page": 3},
+            "metadata": {...},
             "score": 0.95
           }
         ]
@@ -247,15 +248,78 @@ CoopHive provides public v1 API endpoints for customer integration. All v1 endpo
   }
   ```
 
-### 🌐 Web Interface - Authenticated Proxy (Port 3000)
+**`POST /api/v1/user/evaluate/aggregate`**
+- **Description**: Query user's databases with intelligent result aggregation
+- **Content-Type**: `application/json`
+- **Request Body**:
+  ```json
+  {
+    "query": "What are the latest developments in CRISPR gene editing?",
+    "user_email": "user@example.com",
+    "model_name": "openai/gpt-4o-mini",
+    "k": 10,
+    "aggregation_strategy": "hybrid",
+    "top_k": 5,
+    "similarity_weight": 0.7,
+    "frequency_weight": 0.3,
+    "min_similarity_threshold": 0.1
+  }
+  ```
+- **Response**: 
+  ```json
+  {
+    "query": "What are the latest developments in CRISPR?",
+    "user_email": "user@example.com",
+    "aggregation_strategy": "hybrid",
+    "aggregated_results": [
+      {
+        "content": "CRISPR-Cas9 has revolutionized gene editing...",
+        "similarity": 0.95,
+        "frequency": 3,
+        "final_score": 0.89,
+        "rank": 1,
+        "collection": "markitdown_recursive_bge",
+        "metadata": {...}
+      }
+    ],
+    "total_aggregated_items": 5
+  }
+  ```
+- **Parameters**:
+  - `aggregation_strategy`: `"frequency"`, `"similarity"`, or `"hybrid"` (default: `"hybrid"`)
+  - `k`: Number of results per collection (default: `5`)
+  - `top_k`: Final number of aggregated results (default: `5`)
+  - `similarity_weight`: Weight for similarity in hybrid mode (default: `0.7`)
+  - `frequency_weight`: Weight for frequency in hybrid mode (default: `0.3`)
+  - `min_similarity_threshold`: Minimum similarity to consider (default: `0.1`)
 
-The frontend provides authenticated proxy routes to all v1 endpoints:
+#### Metadata Structure
 
-- **Light Server**: `/api/light/v1/*` → `http://localhost:5001/api/v1/*`
-- **Heavy Server**: `/api/heavy/v1/*` → `http://localhost:5002/api/v1/*`  
-- **Database Server**: `/api/database/v1/*` → `http://localhost:5003/api/v1/*`
+The `metadata` field in responses contains comprehensive document information:
 
-**Authentication Required**: All proxy routes require valid NextAuth session.
+```json
+{
+  "content_cid": "QmABC123...",
+  "root_cid": "QmXYZ789...",
+  "embedding_cid": "QmDEF456...",
+  "content": "Full text content of the chunk",
+  "title": "Paper Title from PDF metadata",
+  "authors": "['Author 1', 'Author 2']",
+  "abstract": "Paper abstract text",
+  "doi": "10.1000/journal.2023.001",
+  "publication_date": "2023-01-01",
+  "journal": "Journal Name",
+  "keywords": "['keyword1', 'keyword2']",
+  "url": "https://example.com/paper.pdf"
+}
+```
+
+**Key Fields**:
+- `content_cid`: IPFS hash of the text chunk
+- `root_cid`: IPFS hash of the original PDF document
+- `embedding_cid`: IPFS hash of the vector embedding
+- `content`: The actual text content of the chunk
+- PDF metadata fields (when available): `title`, `authors`, `abstract`, `doi`, etc.
 
 ### 📋 Usage Examples
 
@@ -281,7 +345,21 @@ curl -X POST http://localhost:5003/api/v1/user/evaluate \
   -H "Content-Type: application/json" \
   -d '{
     "query": "machine learning applications in biology",
-    "user_email": "researcher@university.edu"
+    "user_email": "researcher@university.edu",
+    "k": 5
+  }'
+```
+
+#### 4. Query with Result Aggregation
+```bash
+curl -X POST http://localhost:5003/api/v1/user/evaluate/aggregate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "machine learning applications in biology",
+    "user_email": "researcher@university.edu",
+    "k": 10,
+    "aggregation_strategy": "hybrid",
+    "top_k": 5
   }'
 ```
 
