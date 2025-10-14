@@ -53,30 +53,88 @@ def get_drive_files_list(folder_id: str, user_logger=None) -> List[Dict[str, Any
         # Extract file information from the page
         files = []
 
-        # Look for file data in various formats
-        patterns = [
-            r'"([^"]*\.pdf)"[^}]*?"([a-zA-Z0-9_-]{25,})"',
-            r'"([a-zA-Z0-9_-]{25,})"[^}]*?"([^"]*\.pdf)"',
-            r'\["([^"]*\.pdf)"[^\]]*"([a-zA-Z0-9_-]{25,})"',
-        ]
+        # Try to extract _DRIVE_ivd blob (new format as of Sep 2025)
+        # Note: Google uses single quotes in JavaScript
+        ivd_match = re.search(r"window\['_DRIVE_ivd'\]\s*=\s*'(.*?)';", content)
+        
+        if ivd_match:
+            user_logger.info("Found _DRIVE_ivd blob, decoding...")
+            try:
+                # The data is NOT base64 - it's a JavaScript string with escape sequences
+                # like \x22 ("), \x5b ([), \x5d (]), \/ (/)
+                escaped_data = ivd_match.group(1)
+                
+                # Decode the escape sequences
+                # The data contains: \x22 = ", \x5b = [, \x5d = ], \/ = /
+                import codecs
+                try:
+                    # Try to decode using unicode_escape (Python 2 style escapes)
+                    text = codecs.decode(escaped_data, 'unicode_escape')
+                    # Also need to unescape JSON sequences like \/ -> /
+                    text = text.replace(r'\/', '/')
+                except Exception as decode_error:
+                    user_logger.warning(f"Unicode escape decode failed: {decode_error}, trying manual replacement")
+                    # Fallback: manually replace common escape sequences
+                    text = escaped_data.replace(r'\x22', '"')
+                    text = text.replace(r'\x5b', '[')
+                    text = text.replace(r'\x5d', ']')
+                    text = text.replace(r'\/', '/')
+                    text = text.replace(r'\x2c', ',')
+                
+                user_logger.debug(f"Decoded data length: {len(text):,} characters")
+                
+                # The structure is: [[[file_id, [parent_id], "filename.pdf", "application/pdf", ...], ...]]
+                # Extract file entries by finding file IDs followed by PDF filenames
+                # Use a flexible pattern that allows for variations in the structure
+                file_entry_pattern = r'"([a-zA-Z0-9_-]{25,})".{0,50}"([^"]*\.pdf)"'
+                matches = re.findall(file_entry_pattern, text, re.IGNORECASE)
+                
+                user_logger.info(f"Found {len(matches)} PDF entries in _DRIVE_ivd")
+                
+                for file_id, file_name in matches:
+                    if len(file_id) >= 25 and ".pdf" in file_name.lower():
+                        files.append(
+                            {
+                                "id": file_id,
+                                "name": file_name,
+                                "mimeType": "application/pdf",
+                            }
+                        )
+                        user_logger.debug(f"  Found: {file_name} (ID: {file_id})")
+                
+            except Exception as e:
+                user_logger.warning(f"Failed to decode _DRIVE_ivd blob: {e}")
+                user_logger.info("Falling back to legacy pattern matching...")
+                import traceback
+                user_logger.debug(traceback.format_exc())
+        
+        # Fallback to old pattern matching if _DRIVE_ivd parsing failed
+        if not files:
+            user_logger.info("Using legacy pattern matching for file extraction")
+            # Look for file data in various formats
+            patterns = [
+                r'"([^"]*\.pdf)"[^}]*?"([a-zA-Z0-9_-]{25,})"',
+                r'"([a-zA-Z0-9_-]{25,})"[^}]*?"([^"]*\.pdf)"',
+                r'\["([^"]*\.pdf)"[^\]]*"([a-zA-Z0-9_-]{25,})"',
+            ]
 
-        for pattern in patterns:
-            matches = re.findall(pattern, content, re.IGNORECASE)
-            for match in matches:
-                if ".pdf" in match[0].lower():
-                    file_name, file_id = match
-                else:
-                    file_id, file_name = match
+            for pattern in patterns:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    if ".pdf" in match[0].lower():
+                        file_name, file_id = match
+                    else:
+                        file_id, file_name = match
 
-                # Validate file ID (Google Drive IDs are typically 25+ characters)
-                if len(file_id) >= 25 and ".pdf" in file_name.lower():
-                    files.append(
-                        {
-                            "id": file_id,
-                            "name": file_name,
-                            "mimeType": "application/pdf",
-                        }
-                    )
+                    # Validate file ID (Google Drive IDs are typically 25+ characters)
+                    if len(file_id) >= 25 and ".pdf" in file_name.lower():
+                        files.append(
+                            {
+                                "id": file_id,
+                                "name": file_name,
+                                "mimeType": "application/pdf",
+                            }
+                        )
 
         # Remove duplicates
         seen_ids = set()
@@ -118,9 +176,10 @@ def download_pdf_file(
 
     # Try multiple download methods
     download_methods = [
+        f"https://drive.usercontent.google.com/download?id={file_id}&export=download",
         f"https://drive.google.com/uc?export=download&id={file_id}",
-        f"https://drive.google.com/file/d/{file_id}/view",
         f"https://docs.google.com/uc?export=download&id={file_id}",
+        f"https://drive.google.com/file/d/{file_id}/view",
     ]
 
     headers = {
