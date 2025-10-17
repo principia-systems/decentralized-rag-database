@@ -6,6 +6,7 @@ This module provides unified IPFS operations supporting both Lighthouse and loca
 
 import os
 import tempfile
+import threading
 import urllib.parse
 from pathlib import Path
 from typing import Optional, Union
@@ -159,13 +160,14 @@ class IPFSClient:
 
 # Singleton instance that can be initialized once and reused
 _ipfs_client: Optional[IPFSClient] = None
+_ipfs_client_lock = threading.Lock()
 
 
 def get_ipfs_client(
     mode: str = None, api_key: str = None, socket_path: str = None
 ) -> IPFSClient:
     """
-    Get or create the singleton IPFS client instance.
+    Get or create the singleton IPFS client instance (thread-safe).
 
     Args:
         mode: IPFS mode - 'lighthouse' or 'local'
@@ -178,7 +180,10 @@ def get_ipfs_client(
     global _ipfs_client
 
     if _ipfs_client is None:
-        _ipfs_client = IPFSClient(mode=mode, api_key=api_key, socket_path=socket_path)
+        with _ipfs_client_lock:
+            # Double-check after acquiring lock
+            if _ipfs_client is None:
+                _ipfs_client = IPFSClient(mode=mode, api_key=api_key, socket_path=socket_path)
 
     return _ipfs_client
 
