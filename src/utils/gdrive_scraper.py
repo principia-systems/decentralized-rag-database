@@ -86,7 +86,7 @@ def get_drive_files_list(folder_id: str, user_logger=None) -> List[Dict[str, Any
                 # The structure is: [[[file_id, [parent_id], "filename.pdf", "application/pdf", ...], ...]]
                 # Extract file entries by finding file IDs followed by PDF filenames
                 # Use a flexible pattern that allows for variations in the structure
-                file_entry_pattern = r'"([a-zA-Z0-9_-]{25,})".{0,150}"([^"]*\.pdf)"'
+                file_entry_pattern = r'"([a-zA-Z0-9_-]{25,})".{0,50}"([^"]*\.pdf)"'
                 matches = re.findall(file_entry_pattern, text, re.IGNORECASE)
                 
                 user_logger.info(f"Found {len(matches)} PDF entries in _DRIVE_ivd")
