@@ -24,6 +24,8 @@ class IPFSClient:
     """Handles IPFS operations supporting both Lighthouse and local IPFS."""
 
     def __init__(self, mode: str = None, api_key: str = None, socket_path: str = None):
+        # Add lock for thread-safe operations
+        self._operation_lock = threading.Lock()
         """
         Initialize IPFS client.
 
@@ -80,25 +82,27 @@ class IPFSClient:
         if not filepath.exists():
             raise FileNotFoundError(f"File not found: {filepath}")
 
-        if self.mode == "lighthouse":
-            with open(filepath, "rb") as f:
-                headers = {"Authorization": f"Bearer {self.api_key}"}
-                response = requests.post(
-                    self.api_url, headers=headers, files={"file": f}
+        # Use lock to prevent concurrent access to the session
+        with self._operation_lock:
+            if self.mode == "lighthouse":
+                with open(filepath, "rb") as f:
+                    headers = {"Authorization": f"Bearer {self.api_key}"}
+                    response = requests.post(
+                        self.api_url, headers=headers, files={"file": f}
+                    )
+            else:  # local mode
+                # Follow the exact pattern from the user's working example
+                with open(filepath, "rb") as f:
+                    file_content = f.read()
+
+                files = {"file": (filepath.name, file_content, "application/octet-stream")}
+
+                response = self.ipfs_unix_session.post(
+                    f"{self.base_url}/add?pin=true", files=files
                 )
-        else:  # local mode
-            # Follow the exact pattern from the user's working example
-            with open(filepath, "rb") as f:
-                file_content = f.read()
 
-            files = {"file": (filepath.name, file_content, "application/octet-stream")}
-
-            response = self.ipfs_unix_session.post(
-                f"{self.base_url}/add?pin=true", files=files
-            )
-
-        response.raise_for_status()
-        return response.json()["Hash"]
+            response.raise_for_status()
+            return response.json()["Hash"]
 
     def upload_text(self, text: str, filename: Optional[str] = None) -> str:
         """
@@ -131,19 +135,21 @@ class IPFSClient:
         Returns:
             Content as string
         """
-        if self.mode == "lighthouse":
-            url = f"{self.gateway_url}/{cid}"
-            response = requests.get(url)
-        else:  # local mode
-            # Follow the exact pattern from the user's working example
-            response = self.ipfs_unix_session.post(f"{self.base_url}/cat?arg={cid}")
+        # Use lock to prevent concurrent access to the session
+        with self._operation_lock:
+            if self.mode == "lighthouse":
+                url = f"{self.gateway_url}/{cid}"
+                response = requests.get(url)
+            else:  # local mode
+                # Follow the exact pattern from the user's working example
+                response = self.ipfs_unix_session.post(f"{self.base_url}/cat?arg={cid}")
 
-        response.raise_for_status()
-        return (
-            response.text
-            if hasattr(response, "text")
-            else response.content.decode("utf-8")
-        )
+            response.raise_for_status()
+            return (
+                response.text
+                if hasattr(response, "text")
+                else response.content.decode("utf-8")
+            )
 
     def get_gateway_url(self, cid: str) -> str:
         """

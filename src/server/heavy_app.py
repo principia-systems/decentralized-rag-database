@@ -146,7 +146,7 @@ async def background_processing(
 
         # Process each combination
         processing_tasks = []
-        for converter, chunker, embedder in processing_combinations:
+        for i, (converter, chunker, embedder) in enumerate(processing_combinations):
             logger.info(
                 f"Creating task for combination: {converter}_{chunker}_{embedder}"
             )
@@ -161,6 +161,9 @@ async def background_processing(
                 )
             )
             processing_tasks.append(task)
+            # Add small stagger to prevent all tasks from hitting IPFS simultaneously
+            if i < len(processing_combinations) - 1:
+                await asyncio.sleep(0.2)
 
         # Wait for all processing tasks to complete concurrently
         logger.info(f"Running {len(processing_tasks)} combinations concurrently...")
