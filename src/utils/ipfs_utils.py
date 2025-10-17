@@ -53,12 +53,9 @@ class IPFSClient:
             # Follow the exact pattern from the user's working example
             encoded = urllib.parse.quote_plus(self.socket_path)
             self.base_url = f"http+unix://{encoded}/api/v0"
-
-            # Create a session that speaks HTTP over UDS
-            self.ipfs_unix_session = requests_unixsocket.Session()
-            self.ipfs_unix_session.mount(
-                "http+unix://", requests_unixsocket.UnixAdapter()
-            )
+            
+            # Don't create a shared session - we'll create fresh ones per request
+            # to avoid thread-safety issues
             self.gateway_url = os.getenv(
                 "IPFS_GATEWAY_URL", "http://localhost:8080/ipfs"
             )
@@ -97,7 +94,10 @@ class IPFSClient:
 
                 files = {"file": (filepath.name, file_content, "application/octet-stream")}
 
-                response = self.ipfs_unix_session.post(
+                # Create a fresh session for each request to avoid thread-safety issues
+                session = requests_unixsocket.Session()
+                session.mount("http+unix://", requests_unixsocket.UnixAdapter())
+                response = session.post(
                     f"{self.base_url}/add?pin=true", files=files
                 )
 
@@ -141,8 +141,10 @@ class IPFSClient:
                 url = f"{self.gateway_url}/{cid}"
                 response = requests.get(url)
             else:  # local mode
-                # Follow the exact pattern from the user's working example
-                response = self.ipfs_unix_session.post(f"{self.base_url}/cat?arg={cid}")
+                # Create a fresh session for each request to avoid thread-safety issues
+                session = requests_unixsocket.Session()
+                session.mount("http+unix://", requests_unixsocket.UnixAdapter())
+                response = session.post(f"{self.base_url}/cat?arg={cid}")
 
             response.raise_for_status()
             return (
