@@ -95,22 +95,23 @@ def test_processor():
             processor.process(pdf_path=paper, databases=databases)
 
         # Clean up: Delete all PDF files after processing
-        logger.info("Starting cleanup: Deleting processed PDF files...")
-        deleted_files = []
-
-        for paper_path in papers:
-            try:
-                if os.path.exists(paper_path) and paper_path.lower().endswith(".pdf"):
-                    filename = os.path.basename(paper_path)
-                    os.remove(paper_path)
-                    deleted_files.append(filename)
-                    logger.info(f"Deleted: {filename}")
-            except Exception as e:
-                logger.error(f"Error deleting {paper_path}: {str(e)}")
-
-        logger.info(
-            f"Cleanup complete: Deleted {len(deleted_files)} PDF files from papers/ directory"
-        )
+        # DISABLED: Keeping PDFs for debugging
+        # logger.info("Starting cleanup: Deleting processed PDF files...")
+        # deleted_files = []
+        #
+        # for paper_path in papers:
+        #     try:
+        #         if os.path.exists(paper_path) and paper_path.lower().endswith(".pdf"):
+        #             filename = os.path.basename(paper_path)
+        #             os.remove(paper_path)
+        #             deleted_files.append(filename)
+        #             logger.info(f"Deleted: {filename}")
+        #     except Exception as e:
+        #         logger.error(f"Error deleting {paper_path}: {str(e)}")
+        #
+        # logger.info(
+        #     f"Cleanup complete: Deleted {len(deleted_files)} PDF files from papers/ directory"
+        # )
     except Exception as e:
         logger.error(f"Error in test_processor: {e}")
         raise

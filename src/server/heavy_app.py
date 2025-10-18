@@ -184,23 +184,24 @@ async def background_processing(
         logger.info("All processing combinations completed")
 
         # Clean up: Delete all PDFs from user's papers directory after processing
-        try:
-            logger.info(f"Cleaning up PDFs from user directory: {user_papers_dir}")
-            pdf_files = glob.glob(os.path.join(user_papers_dir, "*.pdf"))
-            deleted_count = 0
-            for pdf_file in pdf_files:
-                try:
-                    os.remove(pdf_file)
-                    deleted_count += 1
-                    logger.debug(f"Deleted: {os.path.basename(pdf_file)}")
-                except Exception as delete_error:
-                    logger.error(f"Error deleting {pdf_file}: {str(delete_error)}")
-
-            logger.info(
-                f"Successfully deleted {deleted_count} PDF files from user directory"
-            )
-        except Exception as cleanup_error:
-            logger.error(f"Error during PDF cleanup: {str(cleanup_error)}")
+        # DISABLED: Keeping PDFs for debugging
+        # try:
+        #     logger.info(f"Cleaning up PDFs from user directory: {user_papers_dir}")
+        #     pdf_files = glob.glob(os.path.join(user_papers_dir, "*.pdf"))
+        #     deleted_count = 0
+        #     for pdf_file in pdf_files:
+        #         try:
+        #             os.remove(pdf_file)
+        #             deleted_count += 1
+        #             logger.debug(f"Deleted: {os.path.basename(pdf_file)}")
+        #         except Exception as delete_error:
+        #             logger.error(f"Error deleting {pdf_file}: {str(delete_error)}")
+        #
+        #     logger.info(
+        #         f"Successfully deleted {deleted_count} PDF files from user directory"
+        #     )
+        # except Exception as cleanup_error:
+        #     logger.error(f"Error during PDF cleanup: {str(cleanup_error)}")
 
         # Create databases via database server
         logger.info(f"Starting database creation for {user_email}")
