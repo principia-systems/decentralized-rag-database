@@ -627,14 +627,25 @@ async def rerank_endpoint(request: RerankRequest):
         raise HTTPException(status_code=500, detail=f"Error during rerank: {str(e)}")
 
 
+async def _background_database_creation(user_email: str):
+    """Run database creation in background"""
+    user_logger = get_user_logger(user_email, "database_creation")
+    try:
+        user_logger.info(f"Starting background database creation for {user_email}")
+        create_user_database(user_email)
+        user_logger.info(f"Successfully completed database creation for {user_email}")
+    except Exception as e:
+        user_logger.error(f"Error in background database creation: {str(e)}")
+
+
 @app.post("/api/database/create")
 async def create_database(request: CreateDatabaseRequest):
-    """Endpoint for creating a database from processing mappings"""
+    """Endpoint for creating a database from processing mappings - returns immediately"""
     # Create user-specific logger for this request
     user_logger = get_user_logger(request.user_email, "database_creation")
 
     try:
-        user_logger.info(f"Creating database for user: {request.user_email}")
+        user_logger.info(f"Received database creation request for user: {request.user_email}")
         user_logger.info(f"Processing {len(request.mappings)} PDF CIDs")
 
         # Import database creation functionality
@@ -648,16 +659,15 @@ async def create_database(request: CreateDatabaseRequest):
 
         user_logger.info(f"Saved mappings to {mappings_file}")
 
-        # Create the database using the existing functionality
-        create_user_database(request.user_email)
+        # Start database creation in background (don't await)
+        asyncio.create_task(_background_database_creation(request.user_email))
+        
+        user_logger.info(f"Database creation started in background for {request.user_email}")
 
-        user_logger.info(
-            f"Successfully created database for user: {request.user_email}"
-        )
-
+        # Return immediately
         return {
             "success": True,
-            "message": f"Database created successfully for {request.user_email}",
+            "message": f"Database creation started in background for {request.user_email}",
             "user_email": request.user_email,
             "total_cids": len(request.mappings),
             "total_combinations": sum(
@@ -665,9 +675,9 @@ async def create_database(request: CreateDatabaseRequest):
             ),
         }
     except Exception as e:
-        user_logger.error(f"Error creating database: {str(e)}")
+        user_logger.error(f"Error starting database creation: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error creating database: {str(e)}"
+            status_code=500, detail=f"Error starting database creation: {str(e)}"
         )
 
 
