@@ -96,10 +96,14 @@ class IPFSClient:
 
                 # Create a fresh session for each request to avoid thread-safety issues
                 session = requests_unixsocket.Session()
-                session.mount("http+unix://", requests_unixsocket.UnixAdapter())
-                response = session.post(
-                    f"{self.base_url}/add?pin=true", files=files
-                )
+s                try:
+                    session.mount("http+unix://", requests_unixsocket.UnixAdapter())
+                    response = session.post(
+                        f"{self.base_url}/add?pin=true", files=files
+                    )
+                finally:
+                    # Properly close the session to prevent resource leaks
+                    session.close()
 
             response.raise_for_status()
             return response.json()["Hash"]
@@ -143,8 +147,12 @@ class IPFSClient:
             else:  # local mode
                 # Create a fresh session for each request to avoid thread-safety issues
                 session = requests_unixsocket.Session()
-                session.mount("http+unix://", requests_unixsocket.UnixAdapter())
-                response = session.post(f"{self.base_url}/cat?arg={cid}")
+                try:
+                    session.mount("http+unix://", requests_unixsocket.UnixAdapter())
+                    response = session.post(f"{self.base_url}/cat?arg={cid}")
+                finally:
+                    # Properly close the session to prevent resource leaks
+                    session.close()
 
             response.raise_for_status()
             return (
