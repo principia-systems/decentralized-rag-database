@@ -96,7 +96,7 @@ class IPFSClient:
 
                 # Create a fresh session for each request to avoid thread-safety issues
                 session = requests_unixsocket.Session()
-s                try:
+                try:
                     session.mount("http+unix://", requests_unixsocket.UnixAdapter())
                     response = session.post(
                         f"{self.base_url}/add?pin=true", files=files
