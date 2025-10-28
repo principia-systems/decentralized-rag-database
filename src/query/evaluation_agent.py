@@ -104,8 +104,9 @@ class EvaluationAgent:
         # Skip known problematic collections (temporary workaround)
         # These collections cause segfaults during ChromaDB queries
         skip_collections = [
-            "marker_recursive_bgelarge",  # Causes crash on query
-            "marker_recursive_bge",        # Also causes crash on query
+            "marker_recursive_bgelarge",   # Causes crash on query
+            "marker_recursive_bge",        # Causes crash on query
+            "markitdown_recursive_bge",    # Also causes crash on query
         ]
         
         for collection_name in collection_names:
