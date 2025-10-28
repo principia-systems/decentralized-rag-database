@@ -7,6 +7,7 @@ language queries and retrieving relevant document chunks.
 
 import json
 import os
+import signal
 from pathlib import Path
 from typing import List
 

@@ -101,7 +101,20 @@ class EvaluationAgent:
             "collection_results": collection_results,
         }
 
+        # Skip known problematic collections (temporary workaround)
+        skip_collections = ["marker_recursive_bgelarge"]
+        
         for collection_name in collection_names:
+            # Skip problematic collections
+            if collection_name in skip_collections:
+                user_logger.warning(f"Skipping known problematic collection: {collection_name}")
+                collection_results[collection_name] = {
+                    "error": "Collection skipped due to known issues",
+                    "query": query,
+                    "results": []
+                }
+                continue
+            
             user_logger.info(f"Querying collection: {collection_name}")
             try:
                 result_json = query_collection(
