@@ -109,9 +109,14 @@ class EvaluationAgent:
                 )
                 result_data = json.loads(result_json)
                 collection_results[collection_name] = result_data
+                user_logger.info(f"Successfully queried collection {collection_name}")
             except Exception as e:
-                user_logger.error(f"Error querying collection {collection_name}: {e}")
-                collection_results[collection_name] = {"error": str(e)}
+                user_logger.error(f"Error querying collection {collection_name}: {e}", exc_info=True)
+                collection_results[collection_name] = {
+                    "error": str(e),
+                    "query": query,
+                    "results": []
+                }
 
         with open(results_file, "w") as f:
             json.dump(all_results, f, indent=2)

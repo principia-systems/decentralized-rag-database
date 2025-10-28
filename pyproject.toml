@@ -42,6 +42,7 @@ fastapi = "0.115.9"
 uvicorn = "^0.29.0"
 pydantic = {extras = ["email"], version = "^2.11.7"}
 urllib3 = "<2"
+psutil = "^6.1.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "7.4.0"

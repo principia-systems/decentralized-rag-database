@@ -127,11 +127,17 @@ def query_collection(collection_name, user_query, db_path=None, user_email=None,
             embeder_type=embedder_type, input_text=user_query, user_email=user_email
         )
 
-        values = collection.query(
-            query_embeddings=[embedding],
-            n_results=k,
-            include=["metadatas", "documents", "distances"],
-        )
+        user_logger.info(f"Embedding generated, now querying ChromaDB collection...")
+        try:
+            values = collection.query(
+                query_embeddings=[embedding],
+                n_results=k,
+                include=["metadatas", "documents", "distances"],
+            )
+            user_logger.info(f"ChromaDB query completed successfully")
+        except Exception as query_error:
+            user_logger.error(f"ChromaDB query failed: {query_error}", exc_info=True)
+            raise
 
         result = {"query": user_query, "results": []}
 
